@@ -73,16 +73,16 @@ def main():
                 points = np.reshape(points, (-1, 3))
                 points = np.concatenate((points, np.zeros((points.shape[0], 1))), axis=1)
             batch_dict = processor.forward({'points': points, 'use_lead_xyz': True, 'batch_size': 1})
+            batch_dict['points'] = np.concatenate((np.zeros((batch_dict['points'].shape[0], 1)), batch_dict['points']), axis=1)
             batch_dict['voxel_coords'] = np.concatenate((np.zeros((batch_dict['voxel_coords'].shape[0], 1)), batch_dict['voxel_coords']), axis=1)
             load_data_to_gpu(batch_dict)
 
-            with torch.no_grad():
-                pred_dicts, _ = model(batch_dict)
+            pred_dicts, _ = model(batch_dict)
 
             # ------------------------------ Plot DET results ------------------------------
             PLOT_BOX = False
             if PLOT_BOX:
-                points = batch_dict['points'][:, 0:3].cpu().detach().numpy()
+                points = batch_dict['points'][:, 1:4].cpu().detach().numpy()
                 det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
                 bev_range = [0, -8, -2, 152, 8, 6]
                 plot_gt_boxes(points, det_boxes, bev_range, name="%04d" % idx)
