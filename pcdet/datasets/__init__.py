@@ -8,12 +8,14 @@ from .dataset import DatasetTemplate
 from .kitti.kitti_dataset import KittiDataset
 from .nuscenes.nuscenes_dataset import NuScenesDataset
 from .plusai.plusai_dataset import PlusAIDataset
+from .livox.livox_dataset import LivoxDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
     'KittiDataset': KittiDataset,
     'PlusAIDataset': PlusAIDataset,
-    'NuScenesDataset': NuScenesDataset
+    'NuScenesDataset': NuScenesDataset,
+    'LivoxDataset': LivoxDataset
 }
 
 
