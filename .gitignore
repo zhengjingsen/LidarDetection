@@ -12,3 +12,4 @@ venv/
 *.pkl
 *.zip
 *.bin
+output/
