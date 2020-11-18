@@ -35,6 +35,10 @@ def plot_gt_boxes(points, gt_boxes, bev_range, name=None):
     # Configure the resolution
     steps = 0.1
 
+    points = points[(points[:, 0] > bev_range[0]) & (points[:, 0] < bev_range[3]) &
+                    (points[:, 1] > bev_range[1]) & (points[:, 1] < bev_range[4]) &
+                    (points[:, 2] > bev_range[2]) & (points[:, 2] < bev_range[5])]
+
     # Initialize the plotting canvas
     pixels_x = int((bev_range[3] - bev_range[0]) / steps)
     pixels_y = int((bev_range[4] - bev_range[1]) / steps)
