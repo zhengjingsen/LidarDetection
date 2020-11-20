@@ -15,6 +15,7 @@ class LaserDetVis:
     self.show_img = show_img
     self.canvas_size = (1920, 1920)
     self.running = True
+    self.intensity_mode = False
 
     self.reset()
 
@@ -30,8 +31,8 @@ class LaserDetVis:
   '''
   def add_points(self, points):
     self.points = points[:, 0:3]
-    if points.shape[1] == 4:
-      intensity = points[:, 3]
+    if points.shape[1] >= 4:
+      intensity = points[:, 4]
       intensity = ((intensity - intensity.min()) /
                    (intensity.max() - intensity.min()) *
                    128 + 127).astype(np.uint8)
@@ -133,7 +134,7 @@ class LaserDetVis:
     visuals.XYZAxis(parent=self.scan_view.scene)
 
     self.line = visuals.Line(width=1, method='gl', parent=self.scan_view.scene)
-    self.text = visuals.Text(color='green', font_size=600, bold=True, parent=self.scan_view.scene)
+    self.text = visuals.Text(color='red', font_size=600, bold=True, parent=self.scan_view.scene)
     self.gt_line = visuals.Line(width=1000, parent=self.scan_view.scene)
     # self.sem_view.camera.link(self.scan_view.camera)
 
@@ -181,10 +182,10 @@ class LaserDetVis:
       self.add_points(points)
     if self.viridis_colors is not None:
       self.scan_vis.set_data(self.points,
-                             # face_color=self.viridis_colors[..., ::-1],
-                             # edge_color=self.viridis_colors[..., ::-1],
-                             face_color='white',
-                             edge_color='white',
+                             face_color=self.viridis_colors[..., ::-1],
+                             edge_color=self.viridis_colors[..., ::-1],
+                             # face_color='white',
+                             # edge_color='white',
                              size=1)
     else:
       self.scan_vis.set_data(self.points, size=1)
@@ -194,7 +195,7 @@ class LaserDetVis:
       self.line.set_data()
     else:
       obj_vertices, obj_vert_connect, obj_label_pos = self.add_objs(objs)
-      self.line.set_data(pos=obj_vertices, color='green',
+      self.line.set_data(pos=obj_vertices, color='red',
                          connect=obj_vert_connect)
       if ref_scores is not None and ref_labels is not None:
         labels = []

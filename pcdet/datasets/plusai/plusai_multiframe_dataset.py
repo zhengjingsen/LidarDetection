@@ -22,6 +22,7 @@ class PlusAIMultiframeDataset(DatasetTemplate):
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
         self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
+        print('root_path: ', self.root_path.resolve())
         self.root_split_path = self.root_path / ('training' if self.split != 'test' else 'testing')
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
@@ -253,9 +254,9 @@ class PlusAIMultiframeDataset(DatasetTemplate):
             pred_dict['name'] = np.array(class_names)[pred_labels - 1]
             pred_dict['alpha'] = -np.arctan2(-pred_boxes[:, 1], pred_boxes[:, 0]) + pred_boxes_camera[:, 6]
             pred_dict['bbox'] = pred_boxes_img
-            pred_dict['dimensions'] = pred_boxes_camera[:, 3:6]
-            pred_dict['location'] = pred_boxes_camera[:, 0:3]
-            pred_dict['rotation_y'] = pred_boxes_camera[:, 6]
+            pred_dict['dimensions'] = pred_boxes[:, 3:6]
+            pred_dict['location'] = pred_boxes[:, 0:3]
+            pred_dict['rotation_y'] = pred_boxes[:, 6]
             pred_dict['score'] = pred_scores
             pred_dict['boxes_lidar'] = pred_boxes
 
@@ -333,7 +334,9 @@ class PlusAIMultiframeDataset(DatasetTemplate):
 
             input_dict.update({
                 'gt_names': gt_names,
-                'gt_boxes': gt_boxes_lidar
+                'gt_boxes': gt_boxes_lidar,
+                'locations': annos['locations'],
+                'rotations_y': annos['rotations_y']
             })
 
         data_dict = self.prepare_data(data_dict=input_dict)

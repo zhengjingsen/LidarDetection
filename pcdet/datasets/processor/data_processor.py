@@ -26,6 +26,11 @@ class DataProcessor(object):
                 data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1)
             )
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
+            if data_dict.get('locations', None) is not None:
+                data_dict['locations'] = data_dict['locations'][mask]
+            if data_dict.get('rotations_y', None) is not None:
+                data_dict['rotations_y'] = data_dict['rotations_y'][mask]
+
         return data_dict
 
     def shuffle_points(self, data_dict=None, config=None):

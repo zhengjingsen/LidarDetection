@@ -154,6 +154,15 @@ class DataBaseSampler(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names
         data_dict['points'] = points
+        if 'locations' in data_dict and 'rotations_y' in data_dict:
+            sample_locations = np.concatenate([info['locations'][np.newaxis, :] for _, info in enumerate(total_valid_sampled_dict)], axis=0)
+            if self.sampler_cfg.get('USE_ROAD_PLANE', False):
+                sample_locations[:, :, 2] -= mv_height[:, np.newaxis]
+            data_dict['locations'] = np.concatenate([data_dict['locations'], sample_locations], axis=0)
+
+            sample_rotations_y = np.concatenate([info['rotations_y'][np.newaxis, :] for _, info in enumerate(total_valid_sampled_dict)], axis=0)
+            data_dict['rotations_y'] = np.concatenate([data_dict['rotations_y'], sample_rotations_y], axis=0)
+
         return data_dict
 
     def __call__(self, data_dict):

@@ -136,6 +136,10 @@ class DatasetTemplate(torch_data.Dataset):
             gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
             gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
             data_dict['gt_boxes'] = gt_boxes
+            if data_dict.get('locations', None) is not None:
+                data_dict['locations'] = data_dict['locations'][selected]
+            if data_dict.get('rotations_y', None) is not None:
+                data_dict['rotations_y'] = data_dict['rotations_y'][selected]
 
         data_dict = self.point_feature_encoder.forward(data_dict)
 

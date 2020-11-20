@@ -6,13 +6,10 @@
 '''
 import argparse
 import glob
-from pathlib import Path
-
-import os
-import cv2
-import mayavi.mlab as mlab
-import numpy as np
+import pickle
 import torch
+from pathlib import Path
+import numpy as np
 
 from pcdet.config import cfg, cfg_from_yaml_file
 from pcdet.datasets import DatasetTemplate
@@ -36,7 +33,16 @@ class DemoDataset(DatasetTemplate):
         )
         self.root_path = root_path
         self.ext = ext
-        data_file_list = glob.glob(str(root_path / f'*{self.ext}')) if self.root_path.is_dir() else [self.root_path]
+        self.split = 'test'
+        if self.root_path.is_dir():
+            data_file_list = glob.glob(str(root_path / f'*{self.ext}'))
+        elif str(self.root_path).endswith(self.ext):
+            data_file_list = [self.root_path]
+        elif str(self.root_path).endswith('pkl'):
+            with open(self.root_path, 'rb') as f:
+                self.val_data_list = pickle.load(f)
+                data_file_list = [self.root_path.parent / 'training' / 'pointcloud' / (info['point_cloud']['lidar_idx'] + self.ext) for info in self.val_data_list]
+            self.split = 'val'
 
         data_file_list.sort()
         self.sample_file_list = data_file_list
@@ -46,7 +52,7 @@ class DemoDataset(DatasetTemplate):
 
     def __getitem__(self, index):
         if self.ext == '.bin':
-            points = np.fromfile(self.sample_file_list[index], dtype=np.float32).reshape(-1, 4)
+            points = np.fromfile(self.sample_file_list[index], dtype=np.float32).reshape(-1, 5)
         elif self.ext == '.npy':
             points = np.load(self.sample_file_list[index])
         else:
@@ -106,12 +112,15 @@ class VisualizeDets(LaserDetVis):
       # img_path = os.path.join(self.root_path, example['image_path'])
       # img = cv2.imread(img_path)
       # Show
+      gt_objs = None
+      if self.dataset.split == 'val':
+          gt_objs = self.dataset.val_data_list[idx]['annos']['gt_boxes_lidar']
       self.update_view(idx,
                        points=data_dict['points'][:, 1:].cpu().numpy(),
                        objs=pred_dicts[0]['pred_boxes'].cpu(),
                        ref_scores=pred_dicts[0]['pred_scores'].cpu().numpy(),
                        ref_labels=pred_dicts[0]['pred_labels'].cpu().numpy(),
-                       # gt_objs=gt_objects,
+                       gt_objs=gt_objs,
                        # img=img
                        )
 
@@ -126,6 +135,8 @@ class VisualizeDets(LaserDetVis):
     elif event.key == 'B':
       self.offset -= 1
       self.update()
+    elif event.key == 'C':
+      self.intensity_mode = not self.intensity_mode
     elif event.key == 'Q' or event.key == 'Escape':
       self.destroy()
 

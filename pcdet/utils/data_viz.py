@@ -22,6 +22,85 @@ def plot_feature_map(features, channel=None):
     cv2.imwrite("feature_map.jpg", feature_map)
     print("Feature map saved.")
 
+# plot function for multi-frame visualization
+def plot_multiframe_boxes(points, bev_range, boxes,
+                          gt_boxes=None, resolution=0.1):
+    """ Visualize the boxes.
+
+    :param points: lidar points, [N, 3~5]
+    :param boxes: [N, stack_frame_size, [x, y, z, l, w, h, r]]
+    :param gt_boxes: gt boxes, [N, stack_frame_size, [x, y, z, l, w, h, r]]
+    :param bev_range: bev range, [x_min, y_min, z_min, x_max, y_max, z_max]
+    :return: color image
+    """
+
+    stack_frame_size = boxes.shape[1]
+    # drop out out range points
+    points = points[(points[:, 0] > bev_range[0]) & (points[:, 0] < bev_range[3]) &
+                    (points[:, 1] > bev_range[1]) & (points[:, 1] < bev_range[4]) &
+                    (points[:, 2] > bev_range[2]) & (points[:, 2] < bev_range[5])]
+
+    # Initialize the plotting canvas
+    pixels_x = int((bev_range[3] - bev_range[0]) / resolution)
+    pixels_y = int((bev_range[4] - bev_range[1]) / resolution)
+    canvas = np.zeros((pixels_x, pixels_y, 3), np.uint8)
+
+    # Plot the point cloud
+    loc_x = ((points[:, 0] - bev_range[0]) / resolution).astype(int)
+    loc_y = ((points[:, 1] - bev_range[1]) / resolution).astype(int)
+    if points.shape[1] == 5:
+        color = np.ones((points.shape[0], 3), dtype=np.uint8) * 32
+        # fraction = points[:, -1] / stack_frame_size
+        # color[:, 1] = fraction * 255
+        # color[:, 2] = (1 - fraction) * 255
+        color[points[:, -1] == 0] = [180, 0, 0]
+        color[points[:, -1] == 1] = [0, 180, 0]
+        color[points[:, -1] == 2] = [0, 0, 180]
+        canvas[loc_x, loc_y] = color
+    else:
+        canvas[loc_x, loc_y] = [0, 255, 255]
+
+    def plot_boxes(boxes, color):
+        assert boxes.shape[1] == len(color)
+        for idx in range(boxes.shape[1]):
+            cur_color = color[idx]
+            for box in boxes:
+                box2d = get_corners_2d(box[idx])
+                box2d[:, 0] -= bev_range[0]
+                box2d[:, 1] -= bev_range[1]
+                # Plot box
+                cv2.line(canvas, (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)),
+                         (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)), cur_color, 2)
+                cv2.line(canvas, (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)),
+                         (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)), cur_color, 2)
+                cv2.line(canvas, (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)),
+                         (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)), cur_color, 2)
+                cv2.line(canvas, (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)),
+                         (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)), cur_color, 2)
+                # Plot heading
+                heading_points = rot_line_90(box2d[0], box2d[1])
+                cv2.line(canvas, (int(heading_points[0, 1] / resolution), int(heading_points[0, 0] / resolution)),
+                         (int(heading_points[1, 1] / resolution), int(heading_points[1, 0] / resolution)), cur_color, 2)
+
+    # Plot the gt boxes
+    if gt_boxes is not None:
+        gt_colors = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
+        plot_boxes(gt_boxes, gt_colors)
+
+    # Plot the detect boxes
+    if boxes is not None:
+        dt_colors = [[255, 100, 100], [100, 255, 100], [100, 100, 255]]
+        plot_boxes(boxes, dt_colors)
+
+    # Rotate the canvas to correct direction
+    canvas = cv2.flip(canvas, 0)
+    canvas = cv2.flip(canvas, 1)
+
+    cv2.putText(canvas, "Green: Ground Truth", (10, 35), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.6, color=gt_colors[1], thickness=1)
+
+    return canvas
+
 
 def plot_gt_boxes(points, gt_boxes, bev_range, name=None):
     """ Visualize the ground truth boxes.
