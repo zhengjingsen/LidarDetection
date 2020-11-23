@@ -31,6 +31,7 @@ DATA_CONFIG:
 
 MODEL:
     NAME: PVRCNN
+    STACK_FRAME_SIZE: 3
 
     VFE:
         NAME: MeanVFE
@@ -144,7 +145,7 @@ MODEL:
                 NSAMPLE: [16, 32]
 
     POINT_HEAD:
-        NAME: PointHeadSimple
+        NAME: PointHeadSimpleMultiFrame
         CLS_FC: [256, 256]
         CLASS_AGNOSTIC: True
         USE_POINT_FEATURES_BEFORE_FUSION: True

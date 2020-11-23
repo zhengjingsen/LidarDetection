@@ -169,11 +169,11 @@ class DatasetTemplate(torch_data.Dataset):
                         coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
                         coors.append(coor_pad)
                     ret[key] = np.concatenate(coors, axis=0)
-                elif key in ['gt_boxes']:
+                elif key in ['gt_boxes', 'locations', 'rotations_y']:
                     max_gt = max([len(x) for x in val])
-                    batch_gt_boxes3d = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
+                    batch_gt_boxes3d = np.zeros([batch_size, max_gt, *list(val[0].shape[1:])], dtype=np.float32)
                     for k in range(batch_size):
-                        batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
+                        batch_gt_boxes3d[k, :val[k].__len__(), ...] = val[k]
                     ret[key] = batch_gt_boxes3d
                 else:
                     ret[key] = np.stack(val, axis=0)
