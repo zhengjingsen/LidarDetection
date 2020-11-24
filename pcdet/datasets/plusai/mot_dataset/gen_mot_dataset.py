@@ -170,6 +170,25 @@ def process_obstacles(obstacles_dict):
     obstacles.append(obs)
   return obstacles
 
+def get_obstacle_class(obstacle):
+  if obstacle['size'][0] < 5.0:
+      return 'Car'
+  elif obstacle['size'][0] < 11.0 and obstacle['size'][2] > 3.0:
+      return 'Bus'
+  else:
+      return 'Truck'
+
+obstacle_attr = {}
+def obstacle_attr_statistics(obstacles):
+    global obstacle_attr
+    for obs in obstacles:
+        class_name = obs[1]['class']
+        if class_name not in obstacle_attr:
+            obstacle_attr[class_name] = {'size_sum': np.zeros(3, dtype=np.float64), 'bottom_height_sum': 0.0, 'num': 0}
+        obstacle_attr[class_name]['size_sum'] += obs[1]['size']
+        obstacle_attr[class_name]['bottom_height_sum'] += (obs[1]['location'][2] - obs[1]['size'][2] / 2)
+        obstacle_attr[class_name]['num'] += 1
+
 def prepare_multiframe_dataset():
     stack_frame_size = 3
     base_frame_index = 1    # stack frame is 0, 1, 2, all frames will be transformed to base frame coordinate
@@ -225,13 +244,14 @@ def prepare_multiframe_dataset():
 
                 location = np.matmul(delta_pose[0:3, 0:3], np.array([obs['position']['x'], obs['position']['y'], obs['position']['z']]).T) + delta_pose[0:3, 3]
                 velocity = np.matmul(delta_pose[0:3, 0:3], np.array([obs['velocity']['x'], obs['velocity']['y'], obs['velocity']['z']]).T)
-                obstacles[uuid][i] = {'class': 'Truck',
+                obstacles[uuid][i] = {'class': get_obstacle_class(obs),
                                       'size': obs['size'],
                                       'is_front_car': obs['is_front_car'],
                                       'location': location,
                                       'heading': math.atan2(obs['direction']['y'], obs['direction']['x']),
                                       'velocity': velocity}
             final_labels['obstacles'] = process_obstacles(obstacles)
+            obstacle_attr_statistics(final_labels['obstacles'])
 
             with open(os.path.join(lidar_path, ('%06d.bin' % frame_idx)), 'wb') as f:
                 stack_pcds = np.vstack(stack_pcds)
@@ -251,6 +271,11 @@ def prepare_multiframe_dataset():
                                    figure=fig,
                                    )
               mayavi.mlab.show()
+
+    for key, val in obstacle_attr.items():
+      mean_size = val['size_sum'] / val['num']
+      mean_bottom_height = val['bottom_height_sum'] / val['num']
+      print('{} mean size: [{:.2f}, {:.2f}, {:.2f}], mean bottom height: {:.2f}, number: {}'.format(key, mean_size[0], mean_size[1], mean_size[2], mean_bottom_height, val['num']))
 
 def get_images_sets():
   train_ratio = 0.7

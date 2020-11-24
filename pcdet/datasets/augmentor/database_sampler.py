@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 
 from ...ops.iou3d_nms import iou3d_nms_utils
-from ...utils import box_utils
+from ...utils import box_utils, common_utils
 
 
 class DataBaseSampler(object):
@@ -127,11 +127,19 @@ class DataBaseSampler(object):
             data_dict.pop('calib')
             data_dict.pop('road_plane')
 
+        if 'SAMPLE_ROT_ANGLE' in self.sampler_cfg:
+            noise_rotation = np.random.uniform(self.sampler_cfg.SAMPLE_ROT_ANGLE[0],
+                                               self.sampler_cfg.SAMPLE_ROT_ANGLE[1],
+                                               sampled_gt_boxes.shape[0])
         obj_points_list = []
         for idx, info in enumerate(total_valid_sampled_dict):
             file_path = self.root_path / info['path']
             obj_points = np.fromfile(str(file_path), dtype=np.float32).reshape(
                 [-1, self.sampler_cfg.NUM_POINT_FEATURES])
+
+            if 'SAMPLE_ROT_ANGLE' in self.sampler_cfg:
+                sampled_gt_boxes[idx, 6] += noise_rotation[idx]
+                obj_points = common_utils.rotate_points_along_z(obj_points[np.newaxis, :, :], np.array([noise_rotation[idx]]))[0]
 
             obj_points[:, :3] += info['box3d_lidar'][:3]
 
@@ -158,9 +166,14 @@ class DataBaseSampler(object):
             sample_locations = np.concatenate([info['locations'][np.newaxis, :] for _, info in enumerate(total_valid_sampled_dict)], axis=0)
             if self.sampler_cfg.get('USE_ROAD_PLANE', False):
                 sample_locations[:, :, 2] -= mv_height[:, np.newaxis]
-            data_dict['locations'] = np.concatenate([data_dict['locations'], sample_locations], axis=0)
 
             sample_rotations_y = np.concatenate([info['rotations_y'][np.newaxis, :] for _, info in enumerate(total_valid_sampled_dict)], axis=0)
+            if 'SAMPLE_ROT_ANGLE' in self.sampler_cfg:
+                sample_rotations_y += noise_rotation[:, np.newaxis]
+                sample_locations -= sampled_gt_boxes[:, np.newaxis, 0:3]
+                sample_locations = common_utils.rotate_points_along_z(sample_locations, noise_rotation)
+                sample_locations += sampled_gt_boxes[:, np.newaxis, 0:3]
+            data_dict['locations'] = np.concatenate([data_dict['locations'], sample_locations], axis=0)
             data_dict['rotations_y'] = np.concatenate([data_dict['rotations_y'], sample_rotations_y], axis=0)
 
         return data_dict
@@ -190,8 +203,18 @@ class DataBaseSampler(object):
                 if self.sampler_cfg.get('DATABASE_WITH_FAKELIDAR', False):
                     sampled_boxes = box_utils.boxes3d_kitti_fakelidar_to_lidar(sampled_boxes)
 
-                iou1 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], existed_boxes[:, 0:7])
-                iou2 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], sampled_boxes[:, 0:7])
+                if 'REMOVE_SAMPLE_BOXES_EXTRA_WIDTH' in self.sampler_cfg:
+                    extra_width = np.asarray(self.sampler_cfg.REMOVE_SAMPLE_BOXES_EXTRA_WIDTH)[np.newaxis, :]
+                    large_exist_gt_boxes = existed_boxes[:, 0:7].copy()
+                    large_exist_gt_boxes[:, 3:6] += extra_width
+                    large_sampled_gt_boxes = sampled_boxes[:, 0:7].copy()
+                    large_sampled_gt_boxes[:, 3:6] += extra_width
+                    iou1 = iou3d_nms_utils.boxes_bev_iou_cpu(large_sampled_gt_boxes[:, 0:7], large_exist_gt_boxes[:, 0:7])
+                    iou2 = iou3d_nms_utils.boxes_bev_iou_cpu(large_sampled_gt_boxes[:, 0:7], large_sampled_gt_boxes[:, 0:7])
+                else:
+                    iou1 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], existed_boxes[:, 0:7])
+                    iou2 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], sampled_boxes[:, 0:7])
+
                 iou2[range(sampled_boxes.shape[0]), range(sampled_boxes.shape[0])] = 0
                 iou1 = iou1 if iou1.shape[1] > 0 else iou2
                 valid_mask = ((iou1.max(axis=1) + iou2.max(axis=1)) == 0).nonzero()[0]

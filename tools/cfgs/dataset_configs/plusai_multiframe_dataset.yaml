@@ -1,7 +1,7 @@
 DATASET: 'PlusAIMultiframeDataset'
-DATA_PATH: '/media/jingsen/data/Dataset/plusai/multiframe'
+DATA_PATH: '../data/plusai/multiframe'
 
-POINT_CLOUD_RANGE: [0, -16, -2, 152, 16, 6]
+POINT_CLOUD_RANGE: [2, -16, -2, 162, 16, 6]
 
 DATA_SPLIT: {
     'train': train,
@@ -24,11 +24,11 @@ DATA_AUGMENTOR:
           DB_INFO_PATH:
               - plusai_dbinfos_train.pkl
           PREPARE: {
-             filter_by_min_points: ['Car:5', 'Truck:5'],
+             filter_by_min_points: ['Car:5', 'Truck:5', 'Bus:5'],
              filter_by_difficulty: [-1],
           }
 
-          SAMPLE_GROUPS: ['Car:0','Truck:10']
+          SAMPLE_GROUPS: ['Car:5','Truck:3', 'Bus:3']
           NUM_POINT_FEATURES: 5
           DATABASE_WITH_FAKELIDAR: False
           REMOVE_EXTRA_WIDTH: [0.0, 0.0]
@@ -57,7 +57,7 @@ DATA_PROCESSOR:
 
     - NAME: sample_points
       NUM_POINTS: {
-        'train': 160000,
+        'train': 80000,
         'test': -1
       }
 

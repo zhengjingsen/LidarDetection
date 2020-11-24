@@ -1,4 +1,4 @@
-CLASS_NAMES: ['Truck']
+CLASS_NAMES: ['Car', 'Truck', 'Bus']
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/plusai_multiframe_dataset.yaml
@@ -10,14 +10,16 @@ DATA_CONFIG:
               DB_INFO_PATH:
                   - plusai_dbinfos_train.pkl
               PREPARE: {
-                 filter_by_min_points: ['Car:5', 'Truck:5', 'Tram:5'],
+                 filter_by_min_points: ['Car:5', 'Truck:5', 'Bus:5'],
                  filter_by_difficulty: [-1],
               }
 
-              SAMPLE_GROUPS: ['Truck:10']
+              SAMPLE_GROUPS: ['Car:5','Truck:3', 'Bus:3']
               NUM_POINT_FEATURES: 5
               DATABASE_WITH_FAKELIDAR: False
+              SAMPLE_ROT_ANGLE: [-0.26, 0.26]
               REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
+              REMOVE_SAMPLE_BOXES_EXTRA_WIDTH: [1.0, 0.5, 0]
               LIMIT_WHOLE_SCENE: False
 
             - NAME: random_world_flip
@@ -64,9 +66,9 @@ MODEL:
         ANCHOR_GENERATOR_CONFIG: [
             {
                 'class_name': 'Car',
-                'anchor_sizes': [[4.4, 1.8, 1.5]],
+                'anchor_sizes': [[4.62, 1.95, 2.72]],
                 'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.3],
+                'anchor_bottom_heights': [-0.46],
                 'align_center': False,
                 'feature_map_stride': 8,
                 'matched_threshold': 0.6,
@@ -74,23 +76,23 @@ MODEL:
             },
             {
                 'class_name': 'Truck',
-                'anchor_sizes': [[6.4, 2.5, 3.5]],
+                'anchor_sizes': [[10.51, 2.62, 3.23]],
                 'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.3],
+                'anchor_bottom_heights': [-0.42],
                 'align_center': False,
                 'feature_map_stride': 8,
                 'matched_threshold': 0.6,
                 'unmatched_threshold': 0.45
             },
             {
-                'class_name': 'Tram',
-                'anchor_sizes': [[11.2, 2.9, 4.0]],
-                'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.3],
+                'class_name': 'Bus',
+                'anchor_sizes': [ [ 6.53, 2.62, 4.62 ] ],
+                'anchor_rotations': [ 0, 1.57 ],
+                'anchor_bottom_heights': [ -0.68 ],
                 'align_center': False,
                 'feature_map_stride': 8,
                 'matched_threshold': 0.6,
-                'unmatched_threshold': 0.45
+                'unmatched_threshold': 0.4
             }
         ]
 

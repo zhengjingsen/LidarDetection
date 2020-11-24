@@ -70,21 +70,21 @@ def plot_multiframe_boxes(points, bev_range, boxes,
                 box2d[:, 1] -= bev_range[1]
                 # Plot box
                 cv2.line(canvas, (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)),
-                         (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)), cur_color, 2)
+                         (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)), cur_color, 1)
                 cv2.line(canvas, (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)),
-                         (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)), cur_color, 2)
+                         (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)), cur_color, 1)
                 cv2.line(canvas, (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)),
-                         (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)), cur_color, 2)
+                         (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)), cur_color, 1)
                 cv2.line(canvas, (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)),
-                         (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)), cur_color, 2)
+                         (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)), cur_color, 1)
                 # Plot heading
                 heading_points = rot_line_90(box2d[0], box2d[1])
                 cv2.line(canvas, (int(heading_points[0, 1] / resolution), int(heading_points[0, 0] / resolution)),
                          (int(heading_points[1, 1] / resolution), int(heading_points[1, 0] / resolution)), cur_color, 2)
 
     # Plot the gt boxes
+    gt_colors = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
     if gt_boxes is not None:
-        gt_colors = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
         plot_boxes(gt_boxes, gt_colors)
 
     # Plot the detect boxes
