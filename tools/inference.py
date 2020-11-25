@@ -12,7 +12,7 @@ from pcdet.config import cfg, cfg_from_yaml_file
 from pcdet.datasets import build_dataloader
 from pcdet.models import build_network
 from pcdet.utils import common_utils
-from pcdet.utils.data_viz import plot_gt_boxes
+from pcdet.utils.data_viz import plot_gt_boxes, plot_gt_det_cmp
 from pcdet.datasets.processor.data_processor import DataProcessor
 
 
@@ -50,18 +50,19 @@ def main():
     )
 
     # Load the data
+    test_scene_path = Path("/home/tong.wang/datasets/test_scene")
     test_scene_list = os.listdir(test_scene_path)
     total_num_test_scene = len(test_scene_list)
 
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=test_set)
     with torch.no_grad():
-        # load checkpint
+        # load checkpoint
         model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=False)
         model.cuda()
 
         # start evaluation
         class_names = cfg.CLASS_NAMES
-        point_cloud_range = np.array([0, -8, -2, 152, 8, 6])
+        point_cloud_range = np.array(cfg.DATA_CONFIG.POINT_CLOUD_RANGE)
         processor = DataProcessor(cfg.DATA_CONFIG.DATA_PROCESSOR, point_cloud_range, training=False)
 
         model.eval()
@@ -79,16 +80,17 @@ def main():
 
             pred_dicts, _ = model(batch_dict)
 
-            # ------------------------------ Plot DET results ------------------------------
+            ###########################Plot DET results###############################
             PLOT_BOX = False
             if PLOT_BOX:
                 points = batch_dict['points'][:, 1:4].cpu().detach().numpy()
                 det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
-                bev_range = [0, -8, -2, 152, 8, 6]
-                plot_gt_boxes(points, det_boxes, bev_range, name="%04d" % idx)
-            # -------------------------------------------------------------------------------
+                bev_range = cfg.DATA_CONFIG.POINT_CLOUD_RANGE
+                plot_gt_boxes(points, det_boxes, bev_range, name="pvrcnn_%04d" % idx)
+            ##########################################################################
+
+            idx += 1
 
 
 if __name__ == '__main__':
-    test_scene_path = Path("/home/tong.wang/datasets/test_scene")
     main()

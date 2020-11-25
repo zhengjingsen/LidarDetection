@@ -10,6 +10,7 @@ from .nuscenes.nuscenes_dataset import NuScenesDataset
 from .plusai.plusai_dataset import PlusAIDataset
 from .plusai.plusai_multiframe_dataset import PlusAIMultiframeDataset
 from .livox.livox_dataset import LivoxDataset
+from .mix_data.mix_dataset import MixDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
@@ -17,7 +18,8 @@ __all__ = {
     'PlusAIDataset': PlusAIDataset,
     'NuScenesDataset': NuScenesDataset,
     'LivoxDataset': LivoxDataset,
-    'PlusAIMultiframeDataset': PlusAIMultiframeDataset
+    'PlusAIMultiframeDataset': PlusAIMultiframeDataset,
+    'MixDataset': MixDataset
 }
 
 
