@@ -1,7 +1,8 @@
-CLASS_NAMES: ['Car', 'Truck', 'Bus']
+CLASS_NAMES: ['Car', 'Truck']
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/plusai_multiframe_dataset.yaml
+    STACK_FRAME_SIZE: 3
     DATA_AUGMENTOR:
         DISABLE_AUG_LIST: ['placeholder']
         AUG_CONFIG_LIST:
@@ -10,14 +11,14 @@ DATA_CONFIG:
               DB_INFO_PATH:
                   - plusai_dbinfos_train.pkl
               PREPARE: {
-                 filter_by_min_points: ['Car:5', 'Truck:5', 'Bus:5'],
+                 filter_by_min_points: ['Car:5', 'Truck:5'],
                  filter_by_difficulty: [-1],
               }
 
-              SAMPLE_GROUPS: ['Car:5','Truck:3', 'Bus:3']
+              SAMPLE_GROUPS: ['Car:8','Truck:5']
               NUM_POINT_FEATURES: 5
               DATABASE_WITH_FAKELIDAR: False
-              SAMPLE_ROT_ANGLE: [-0.26, 0.26]
+              SAMPLE_ROT_ANGLE: [-0.087, 0.087]
               REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
               REMOVE_SAMPLE_BOXES_EXTRA_WIDTH: [1.0, 0.5, 0]
               LIMIT_WHOLE_SCENE: False
@@ -66,9 +67,9 @@ MODEL:
         ANCHOR_GENERATOR_CONFIG: [
             {
                 'class_name': 'Car',
-                'anchor_sizes': [[4.62, 1.95, 2.72]],
+                'anchor_sizes': [[4.74, 1.88, 2.64]],
                 'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.46],
+                'anchor_bottom_heights': [-0.66],
                 'align_center': False,
                 'feature_map_stride': 8,
                 'matched_threshold': 0.6,
@@ -76,9 +77,9 @@ MODEL:
             },
             {
                 'class_name': 'Truck',
-                'anchor_sizes': [[10.51, 2.62, 3.23]],
+                'anchor_sizes': [[10.70, 2.75, 4.24]],
                 'anchor_rotations': [0, 1.57],
-                'anchor_bottom_heights': [-0.42],
+                'anchor_bottom_heights': [-0.48],
                 'align_center': False,
                 'feature_map_stride': 8,
                 'matched_threshold': 0.6,
@@ -225,7 +226,7 @@ MODEL:
         NMS_CONFIG:
             MULTI_CLASSES_NMS: False
             NMS_TYPE: nms_gpu
-            NMS_THRESH: 0.1
+            NMS_THRESH: 0.01
             NMS_PRE_MAXSIZE: 4096
             NMS_POST_MAXSIZE: 500
 

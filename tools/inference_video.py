@@ -120,7 +120,7 @@ def main():
                     gt_boxes = test_dataset.val_data_list[idx]['annos']['gt_boxes_lidar']
                     gt_boxes = gt_boxes[:, np.newaxis, :].repeat(3, axis=1)
                 image = plot_multiframe_boxes(data_dict['points'][:, 1:].cpu().numpy(),
-                                              bev_range, boxes, gt_boxes=gt_boxes)
+                                              boxes, bev_range, gt_boxes=gt_boxes)
                 cv2.imshow('show_result', image)
                 cv2.waitKey(1)
                 out.write(image)

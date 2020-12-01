@@ -23,7 +23,7 @@ class PlusAIMultiframeDataset(DatasetTemplate):
         )
         self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
         print('root_path: ', self.root_path.resolve())
-        self.root_split_path = self.root_path / ('training' if self.split != 'test' else 'testing')
+        self.root_split_path = self.root_path
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
         self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
@@ -61,20 +61,21 @@ class PlusAIMultiframeDataset(DatasetTemplate):
             logger=self.logger
         )
         self.split = split
-        self.root_split_path = self.root_path / ('training' if self.split != 'test' else 'testing')
+        self.root_split_path = self.root_path
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
         self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
 
     def get_lidar(self, idx):
-        lidar_file = self.root_split_path / 'pointcloud' / ('%s.bin' % idx)
+        lidar_file = self.root_split_path / idx
         assert lidar_file.exists()
         lidar_data = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 5)
 
         return lidar_data
 
     def get_label(self, idx):
-        label_file = self.root_split_path / 'label' / ('%s.pkl' % idx)
+        [scene_name, _, frame] = idx.split('/')
+        label_file = self.root_split_path / scene_name / 'label' / (frame[:-4] + '.pkl')
         try:
             assert label_file.exists()
         except AssertionError:
@@ -88,7 +89,7 @@ class PlusAIMultiframeDataset(DatasetTemplate):
         import concurrent.futures as futures
 
         def process_single_scene(sample_idx):
-            print('%s sample_idx: %s' % (self.split, sample_idx))
+            # print('%s sample_idx: %s' % (self.split, sample_idx))
             info = {}
             pc_info = {'num_features': 5, 'lidar_idx': sample_idx}
             info['point_cloud'] = pc_info
@@ -130,12 +131,16 @@ class PlusAIMultiframeDataset(DatasetTemplate):
                 index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
                 annotations['index'] = np.array(index, dtype=np.int32)
 
-                loc = annotations['location'][:num_objects]
-                dims = annotations['dimensions'][:num_objects]
-                rots = annotations['rotation_y'][:num_objects]
-                loc_lidar = loc
-                l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
-                gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, rots[..., np.newaxis]], axis=1)
+                if len(obj_labels) > 0:
+                    loc = annotations['location'][:num_objects]
+                    dims = annotations['dimensions'][:num_objects]
+                    rots = annotations['rotation_y'][:num_objects]
+                    loc_lidar = loc
+                    l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
+                    gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, rots[..., np.newaxis]], axis=1)
+                else:
+                    print('obstacle size is zero in {}'.format(sample_idx))
+                    gt_boxes_lidar = np.array([])
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
                 info['annos'] = annotations
 
@@ -186,7 +191,8 @@ class PlusAIMultiframeDataset(DatasetTemplate):
                     torch.from_numpy(points[:, 0:3]), torch.from_numpy(cur_gt_boxes)).numpy()  # (nboxes, npoints)
 
             for i in range(num_obj):
-                filename = '%s_%s_%d.bin' % (sample_idx, names[i], i)
+                [scene_name, _, frame] = sample_idx.split('/')
+                filename = '%s_%s_%s_%d.bin' % (scene_name, frame[:-4], names[i], i)
                 filepath = database_save_path / filename
                 gt_points = points[point_indices[i] > 0]
                 num_points_in_gt = gt_points.shape[0]
@@ -390,6 +396,7 @@ def check_lidar_data(pointcloud_path):
 
     pointcloud_list = os.listdir(pointcloud_path)
     for pc in pointcloud_list:
+        print(pc)
         pc_file = pointcloud_path / pc
         assert pc_file.exists()
         lidar_data = np.fromfile(str(pc_file), dtype=np.float32).reshape(-1, 5)
@@ -429,7 +436,7 @@ if __name__ == '__main__':
         ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
         create_plusai_infos(
             dataset_cfg=dataset_cfg,
-            class_names=['Car', 'Truck', 'Bus'],
+            class_names=['Car', 'Truck'],
             data_path=ROOT_DIR / 'data' / 'plusai' / 'multiframe',
             save_path=ROOT_DIR / 'data' / 'plusai' / 'multiframe'
         )

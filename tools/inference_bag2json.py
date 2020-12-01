@@ -1,30 +1,28 @@
+import os
 import argparse
 import json
 import math
-import copy
 from pathlib import Path
 
 import numpy as np
 import torch
 import cv2
-import rosbag
-import sensor_msgs.point_cloud2 as pc2
 
 from pcdet.models import load_data_to_gpu
 from pcdet.config import cfg, cfg_from_yaml_file
-from pcdet.datasets import build_dataloader
 from pcdet.models import build_network
 from pcdet.utils import common_utils
-from pcdet.utils.data_viz import plot_gt_boxes, plot_gt_det_cmp
-from pcdet.datasets.processor.data_processor import DataProcessor
+from pcdet.utils.data_viz import plot_gt_boxes, plot_multiframe_boxes
 from pcdet.utils.tracker_for_inference import TrackingManager
+from pcdet.datasets.plusai.plusai_bag_dataset import BagMultiframeDataset, BagMultiframeDatasetUnifyLidar
 
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--bag_file', type=str, default=None, help='specify the bag file to be inferenced')
     parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for inference')
-    parser.add_argument('--workers', type=int, default=4, help='number of workers for dataloader')
+    parser.add_argument('--save_video', default=False, action='store_true')
+    parser.add_argument('--save_path', default='./', help='path to save the inference video')
     parser.add_argument('--ckpt', type=str, default=None, help='model checkpoint')
     args = parser.parse_args()
 
@@ -35,20 +33,13 @@ def parse_config():
 
     return args, cfg
 
-
 def main():
-    args, cfg = parse_config()
-
     log_file = 'log_bag_inference.txt'
     logger = common_utils.create_logger(log_file, rank=0)
 
-    # Build dataset config
-    test_set, _, _ = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=1,
-        dist=False, workers=args.workers, training=False
-    )
+    test_set = BagMultiframeDatasetUnifyLidar(cfg.DATA_CONFIG,
+                                    bag_path=args.bag_file,
+                                    class_names=cfg.CLASS_NAMES)
 
     # Build network
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=test_set)
@@ -56,20 +47,22 @@ def main():
     # Initialize tracking manager
     tracking_manager = TrackingManager(cfg)
 
-    # Load the bag data
-    bag_data = rosbag.Bag(args.bag_file, 'r')
-
     json_dict = {'objects': []}
     frame_idx = 0
     object_id = 0
-    odom_tmp = []
+
+    image_resolution = 0.1
 
     # Save video
-    SAVE_VIDEO = False
-    if SAVE_VIDEO:
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        video_output = cv2.VideoWriter('inf_result.avi', fourcc, 10.0, (231, 1601))
+    mode = 'multi' if 'STACK_FRAME_SIZE' in cfg.DATA_CONFIG else 'single'
+    bev_range = cfg.DATA_CONFIG.POINT_CLOUD_RANGE
+    if args.save_video:
+        fourcc = cv2.VideoWriter_fourcc(*'XVID') # MJPG XVID DIVX
+        video_file_name = os.path.join(args.save_path, 'inf_result_{}.avi'.format(args.bag_file.split('/')[-1][:-4]))
+        video_output = cv2.VideoWriter(video_file_name, fourcc, 10.0, (int((bev_range[4] - bev_range[1]) / image_resolution),
+                                                                       int((bev_range[3] - bev_range[0]) / image_resolution)))
 
+    logger.info('-----------------Start inference of OpenPCDet with bag: {}-----------------'.format(args.bag_file))
     # Inference with model
     with torch.no_grad():
         # load checkpoint
@@ -78,150 +71,116 @@ def main():
         model.eval()
 
         # start evaluation
-        class_names = cfg.CLASS_NAMES
-        point_cloud_range = np.array(cfg.DATA_CONFIG.POINT_CLOUD_RANGE)
-        processor = DataProcessor(cfg.DATA_CONFIG.DATA_PROCESSOR, point_cloud_range, training=False)
-        print("Predicting from bag file ...")
+        for timestamp, pose, data_dict in test_set:
+            odom_tmp = [pose[1][3], pose[1][0], pose[1][1], pose[1][2], pose[0][0], pose[0][1], pose[0][2]]
 
-        for topic, msg, _ in bag_data.read_messages(topics=["/unified/lidar_points", "/navsat/odom"]):
-            if topic == "/navsat/odom":
-                odom_tmp = [msg.pose.pose.orientation.w, msg.pose.pose.orientation.x, msg.pose.pose.orientation.y,
-                            msg.pose.pose.orientation.z,
-                            msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
+            timestr = '%0.9f' % timestamp
+            timestr = timestr.split('.')
 
-            if topic == "/unified/lidar_points":
-                timestr = '%0.9f' % msg.header.stamp.to_sec()
-                timestr = timestr.split('.')
+            batch_dict = test_set.collate_batch([data_dict])
+            load_data_to_gpu(batch_dict)
 
-                lidar_pts_unified = pc2.read_points(msg)
-                lidar_pts_unified = np.array(list(lidar_pts_unified))[:, :4]
-                lidar_intensity = copy.deepcopy(lidar_pts_unified[:, 3])
-                lidar_pts_unified[:, 3] = 1
-                lidar_pts_unified = np.matmul(lidar_pts_unified, tf_matrix_world2imu.T)
-                lidar_pts_unified[:, 3] = 0
+            print("Predicting message %0.3f %04d" % (timestamp, frame_idx))
+            pred_dicts, _ = model(batch_dict)
 
-                # lidar_pts_unified[:, 2] += 0.3
-                # lidar_pts_unified = np.concatenate((lidar_pts_unified, np.zeros((lidar_pts_unified.shape[0], 1))), axis=1)
-                batch_dict = processor.forward({'points': lidar_pts_unified, 'use_lead_xyz': True, 'batch_size': 1})
-                batch_dict['points'] = np.concatenate(
-                    (np.zeros((batch_dict['points'].shape[0], 1)), batch_dict['points']), axis=1)
-                batch_dict['voxel_coords'] = np.concatenate(
-                    (np.zeros((batch_dict['voxel_coords'].shape[0], 1)), batch_dict['voxel_coords']), axis=1)
-                load_data_to_gpu(batch_dict)
+            # Update the tracking manager
+            tracked_objects = tracking_manager.update_tracking(pred_dicts)
 
-                print("Predicting message %04d" % frame_idx)
-                pred_dicts, _ = model(batch_dict)
-
-                # Update the tracking manager
-                tracked_objects = tracking_manager.update_tracking(pred_dicts)
-
-                # Save video
-                if SAVE_VIDEO:
-                    points = batch_dict['points'][:, 1:4].cpu().detach().numpy()
-                    det_boxes = tracked_objects['pred_boxes']
-                    # det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
-                    bev_range = cfg.DATA_CONFIG.POINT_CLOUD_RANGE
+            # Save video
+            if args.save_video:
+                det_boxes = tracked_objects['pred_boxes']
+                # det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
+                # points = batch_dict['points'][:, 1:].cpu().detach().numpy()
+                points = data_dict['points']
+                if mode == 'multi' and det_boxes.size > 0:
+                    det_boxes = det_boxes[:, np.newaxis, :].repeat(3, axis=1)
+                    frame = plot_multiframe_boxes(points, det_boxes, bev_range, info='ts: {:.3f}'.format(timestamp))
+                else:
                     frame = plot_gt_boxes(points, det_boxes, bev_range, ret=True)
-                    video_output.write(frame)
+                video_output.write(frame)
+                cv2.imshow('debug', frame)
+                cv2.waitKey(1)
 
-                ###########################Plot DET results###############################
-                PLOT_BOX = False
-                if PLOT_BOX:
-                    points = batch_dict['points'][:, 1:4].cpu().detach().numpy()
-                    # det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
-                    det_boxes = tracked_objects['pred_boxes']
-                    bev_range = cfg.DATA_CONFIG.POINT_CLOUD_RANGE
-                    plot_gt_boxes(points, det_boxes, bev_range, name="%04d" % frame_idx)
-                ##########################################################################
+            # Format the det result
+            for obj_idx in range(tracked_objects['pred_boxes'].shape[0]):
+                # Traverse all objects in json_dict's object list, find the item with same uuid
+                FIND_IN_ARCHIVE = False
+                for archived_object in json_dict['objects']:
+                    if tracked_objects['object_ids'][obj_idx] == int(archived_object['uuid']):
+                        bound_info = {'Tr_imu_to_world': {'qw': odom_tmp[0], 'qx': odom_tmp[1],
+                                                          'qy': odom_tmp[2], 'qz': odom_tmp[3],
+                                                          'x': odom_tmp[4], 'y': odom_tmp[5],
+                                                          'z': odom_tmp[6]},
+                                      'timestamp': int(timestr[0]),
+                                      'timestamp_nano': int(timestr[1]),
+                                      'velocity': {'x': 0, 'y': 0, 'z': 0}}
+                        obj_loc = tracked_objects['pred_boxes'][obj_idx, :3].tolist()
+                        obj_dim = tracked_objects['pred_boxes'][obj_idx, 3:6].tolist()
+                        obj_rz = tracked_objects['pred_boxes'][obj_idx, 6].tolist()
 
-                # Format the det result
-                for obj_idx in range(tracked_objects['pred_boxes'].shape[0]):
-                    # Traverse all objects in json_dict's object list, find the item with same uuid
-                    FIND_IN_ARCHIVE = False
-                    for archived_object in json_dict['objects']:
-                        if tracked_objects['object_ids'][obj_idx] == int(archived_object['uuid']):
-                            bound_info = {'Tr_imu_to_world': {'qw': odom_tmp[0], 'qx': odom_tmp[1],
-                                                              'qy': odom_tmp[2], 'qz': odom_tmp[3],
-                                                              'x': odom_tmp[4], 'y': odom_tmp[5],
-                                                              'z': odom_tmp[6]},
-                                          'timestamp': int(timestr[0]),
-                                          'timestamp_nano': int(timestr[1]),
-                                          'velocity': {'x': 0, 'y': 0, 'z': 0}}
-                            obj_loc = tracked_objects['pred_boxes'][obj_idx, :3].tolist()
-                            obj_dim = tracked_objects['pred_boxes'][obj_idx, 3:6].tolist()
-                            obj_rz = tracked_objects['pred_boxes'][obj_idx, 6].tolist()
+                        # Rotate the object center
+                        loc_x = obj_loc[0] * math.cos(-obj_rz) - obj_loc[1] * math.sin(-obj_rz)
+                        loc_y = obj_loc[0] * math.sin(-obj_rz) + obj_loc[1] * math.cos(-obj_rz)
 
-                            # Rotate the object center
-                            loc_x = obj_loc[0] * math.cos(-obj_rz) - obj_loc[1] * math.sin(-obj_rz)
-                            loc_y = obj_loc[0] * math.sin(-obj_rz) + obj_loc[1] * math.cos(-obj_rz)
+                        bound_info.update(
+                            {'center': {'x': loc_x, 'y': loc_y, 'z': obj_loc[2]},
+                             'direction': {'x': 0, 'y': 0, 'z': 0},
+                             'heading': obj_rz,
+                             'is_front_car': 0,
+                             'position': {'x': obj_loc[0], 'y': obj_loc[1], 'z': obj_loc[2]},
+                             'size': {'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]},
+                             })
 
-                            bound_info.update(
-                                {'center': {'x': loc_x, 'y': loc_y, 'z': obj_loc[2]},
-                                 'direction': {'x': 0, 'y': 0, 'z': 0},
-                                 'heading': obj_rz,
-                                 'is_front_car': 0,
-                                 'position': {'x': obj_loc[0], 'y': obj_loc[1], 'z': obj_loc[2]},
-                                 'size': {'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]},
-                                 })
+                        archived_object['bounds'].append(bound_info)
+                        FIND_IN_ARCHIVE = True
+                        break
 
-                            archived_object['bounds'].append(bound_info)
-                            FIND_IN_ARCHIVE = True
-                            break
+                if FIND_IN_ARCHIVE:
+                    continue
 
-                    if FIND_IN_ARCHIVE:
-                        continue
+                # If not find, create new object info
+                new_object_info = {'bounds': [{'Tr_imu_to_world': {'qw': odom_tmp[0], 'qx': odom_tmp[1],
+                                                                   'qy': odom_tmp[2], 'qz': odom_tmp[3],
+                                                                   'x': odom_tmp[4], 'y': odom_tmp[5],
+                                                                   'z': odom_tmp[6]},
+                                               'timestamp': int(timestr[0]),
+                                               'timestamp_nano': int(timestr[1]),
+                                               'velocity': {'x': 0, 'y': 0, 'z': 0}}
+                                              ],
+                                   'size': {},
+                                   'uuid': str(tracked_objects['object_ids'][obj_idx])
+                                   }
+                obj_loc = tracked_objects['pred_boxes'][obj_idx, :3].tolist()
+                obj_dim = tracked_objects['pred_boxes'][obj_idx, 3:6].tolist()
+                obj_rz = tracked_objects['pred_boxes'][obj_idx, 6].tolist()
 
-                    # If not find, create new object info
-                    new_object_info = {'bounds': [{'Tr_imu_to_world': {'qw': odom_tmp[0], 'qx': odom_tmp[1],
-                                                                       'qy': odom_tmp[2], 'qz': odom_tmp[3],
-                                                                       'x': odom_tmp[4], 'y': odom_tmp[5],
-                                                                       'z': odom_tmp[6]},
-                                                   'timestamp': int(timestr[0]),
-                                                   'timestamp_nano': int(timestr[1]),
-                                                   'velocity': {'x': 0, 'y': 0, 'z': 0}}
-                                                  ],
-                                       'size': {},
-                                       'uuid': str(tracked_objects['object_ids'][obj_idx])
-                                       }
-                    obj_loc = tracked_objects['pred_boxes'][obj_idx, :3].tolist()
-                    obj_dim = tracked_objects['pred_boxes'][obj_idx, 3:6].tolist()
-                    obj_rz = tracked_objects['pred_boxes'][obj_idx, 6].tolist()
+                # Rotate the object center
+                loc_x = obj_loc[0] * math.cos(-obj_rz) - obj_loc[1] * math.sin(-obj_rz)
+                loc_y = obj_loc[0] * math.sin(-obj_rz) + obj_loc[1] * math.cos(-obj_rz)
 
-                    # Rotate the object center
-                    loc_x = obj_loc[0] * math.cos(-obj_rz) - obj_loc[1] * math.sin(-obj_rz)
-                    loc_y = obj_loc[0] * math.sin(-obj_rz) + obj_loc[1] * math.cos(-obj_rz)
+                new_object_info['bounds'][0].update(
+                    {'center': {'x': loc_x, 'y': loc_y, 'z': obj_loc[2]},
+                     'direction': {'x': 1, 'y': 0, 'z': 0},
+                     'heading': obj_rz,
+                     'is_front_car': 0,
+                     'position': {'x': obj_loc[0], 'y': obj_loc[1], 'z': obj_loc[2]},
+                     'size': {'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]},
+                     })
+                new_object_info['size'].update({'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]})
+                json_dict['objects'].append(new_object_info)
+                object_id += 1
+            frame_idx += 1
 
-                    new_object_info['bounds'][0].update(
-                        {'center': {'x': loc_x, 'y': loc_y, 'z': obj_loc[2]},
-                         'direction': {'x': 0, 'y': 0, 'z': 0},
-                         'heading': obj_rz,
-                         'is_front_car': 0,
-                         'position': {'x': obj_loc[0], 'y': obj_loc[1], 'z': obj_loc[2]},
-                         'size': {'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]},
-                         })
-                    new_object_info['size'].update({'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]})
-                    json_dict['objects'].append(new_object_info)
-                    object_id += 1
-                frame_idx += 1
-                odom_tmp = []
-
-    if SAVE_VIDEO:
+    if args.save_video:
         video_output.release()
-        print("Inference results saved as video.")
+        print("Inference results video saved as {}".format(video_file_name))
 
     json_txt = json.dumps(json_dict, indent=4)
     with open('%s.json' % args.bag_file, 'w') as f:
         f.write(json_txt)
         print("JSON file saved at %s.json" % args.bag_file)
-    bag_data.close()
 
 
 if __name__ == '__main__':
-    tf_matrix_world2imu = np.array([9.7664633748321206e-01, 2.3700882187393947e-02,
-                                    2.1354233630479907e-01, 4.4884194774399999e+00,
-                                    -2.7655994825909448e-02, 9.9949637395898994e-01,
-                                    1.5552890021958202e-02, -1.9965142422800002e-02,
-                                    -2.1306615826035888e-01, -2.1095415271440141e-02,
-                                    9.7680992196315319e-01, 2.8337476145100000e+00,
-                                    0., 0., 0., 1.]).reshape([4, 4])
+    args, cfg = parse_config()
     main()

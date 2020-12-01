@@ -93,8 +93,7 @@ class DataProcessor(object):
             pts_near_flag = pts_depth < 40.0
             far_idxs_choice = np.where(pts_near_flag == 0)[0]
             near_idxs = np.where(pts_near_flag == 1)[0]
-            near_idxs_choice = np.random.choice(near_idxs, num_points - len(far_idxs_choice), replace=False)
-            choice = []
+            # print('num_points: ', num_points, ', total_num_points: ', len(points), ', num_far_points: ', len(far_idxs_choice))
             if num_points > len(far_idxs_choice):
                 near_idxs_choice = np.random.choice(near_idxs, num_points - len(far_idxs_choice), replace=False)
                 choice = np.concatenate((near_idxs_choice, far_idxs_choice), axis=0) \

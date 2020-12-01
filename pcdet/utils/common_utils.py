@@ -3,12 +3,44 @@ import os
 import pickle
 import random
 import shutil
+import bisect
+import quaternion
 import subprocess
-
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+
+
+def transform_mtx(trans, quat):
+  pose = np.eye(4)
+  pose[0:3, 0:3] = quaternion.as_rotation_matrix(np.quaternion(quat[3], quat[0], quat[1], quat[2]))
+  pose[:3, 3] = trans
+  return pose
+
+
+def interpolate_pose(pose1, pose2, t1, t2, t_out):
+  tau = (t_out-t1) / (t2-t1)
+  trans = (1-tau) * pose1[0] + tau * pose2[0]
+  quat = quaternion.slerp(np.quaternion(pose1[1][3], pose1[1][0], pose1[1][1], pose1[1][2]),
+                          np.quaternion(pose2[1][3], pose2[1][0], pose2[1][1], pose2[1][2]),
+                          t1, t2, t_out)
+  return (trans, np.array([quat.x, quat.y, quat.z, quat.w]))
+
+
+def get_best_pose(timestamp, poses):
+  timestamps, poses = poses
+  after_i = bisect.bisect_left(timestamps, timestamp)
+  # print "timestamp is", timestamp, "after_i is", after_i, "top stamps are", timestamps[:2]
+  before_i = max(0, after_i - 1)
+  after_time = timestamps[after_i]
+  before_time = timestamps[before_i]
+  if after_time - before_time >= 0.02:
+    print("warning, hole of size", after_time - before_time)
+  if before_i == after_i:
+    # print "beep"
+    return poses[before_i]
+  return interpolate_pose(poses[before_i], poses[after_i], before_time, after_time, timestamp)
 
 
 def check_numpy_to_torch(x):

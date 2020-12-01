@@ -23,8 +23,8 @@ def plot_feature_map(features, channel=None):
     print("Feature map saved.")
 
 # plot function for multi-frame visualization
-def plot_multiframe_boxes(points, bev_range, boxes,
-                          gt_boxes=None, resolution=0.1):
+def plot_multiframe_boxes(points, boxes, bev_range,
+                          gt_boxes=None, resolution=0.1, info='None'):
     """ Visualize the boxes.
 
     :param points: lidar points, [N, 3~5]
@@ -96,15 +96,15 @@ def plot_multiframe_boxes(points, bev_range, boxes,
     canvas = cv2.flip(canvas, 0)
     canvas = cv2.flip(canvas, 1)
 
-    cv2.putText(canvas, "Green: Ground Truth", (10, 35), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+    cv2.putText(canvas, info, (10, 35), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                 fontScale=0.6, color=gt_colors[1], thickness=1)
 
     return canvas
 
 
-def plot_gt_boxes(points, gt_boxes, bev_range, name=None):
+def plot_gt_boxes(points, gt_boxes, bev_range, name=None, ret=False,
+                  resolution=0.1):
     """ Visualize the ground truth boxes.
-
     :param points: lidar points, [N, 3]
     :param gt_boxes: gt boxes, [N, [x, y, z, l, w, h, r]]
     :param bev_range: bev range, [x_min, y_min, z_min, x_max, y_max, z_max]
@@ -112,15 +112,14 @@ def plot_gt_boxes(points, gt_boxes, bev_range, name=None):
     """
 
     # Configure the resolution
-    steps = 0.1
-
+    steps = resolution
+    
     points = points[(points[:, 0] > bev_range[0]) & (points[:, 0] < bev_range[3]) &
                     (points[:, 1] > bev_range[1]) & (points[:, 1] < bev_range[4]) &
                     (points[:, 2] > bev_range[2]) & (points[:, 2] < bev_range[5])]
-
     # Initialize the plotting canvas
-    pixels_x = int((bev_range[3] - bev_range[0]) / steps)
-    pixels_y = int((bev_range[4] - bev_range[1]) / steps)
+    pixels_x = int((bev_range[3] - bev_range[0]) / steps) + 1
+    pixels_y = int((bev_range[4] - bev_range[1]) / steps) + 1
     canvas = np.zeros((pixels_x, pixels_y, 3), np.uint8)
     canvas.fill(0)
 
@@ -128,6 +127,24 @@ def plot_gt_boxes(points, gt_boxes, bev_range, name=None):
     loc_x = ((points[:, 0] - bev_range[0]) / steps).astype(int)
     loc_y = ((points[:, 1] - bev_range[1]) / steps).astype(int)
     canvas[loc_x, loc_y] = [0, 255, 255]
+
+    # for idx in range(points.shape[0]):
+    #     time0 = time()
+    #     point = points[idx, :]
+    #     time1 = time()
+    #     print("checkpoint1:", time1 - time0)
+    #     if bev_range[0] <= point[0] <= bev_range[3] and \
+    #        bev_range[1] <= point[1] <= bev_range[4] and \
+    #        bev_range[2] <= point[2] <= bev_range[5]:
+    #         time2 = time()
+    #         print("checkpoint2:", time2 - time1)
+    #         loc_x = int((point[0] - bev_range[0]) / steps)
+    #         loc_y = int((point[1] - bev_range[1]) / steps)
+    #         time3 = time()
+    #         print("checkpoint3:", time3 - time2)
+    #         canvas[loc_x, loc_y] = [0, 255, 255]
+    #         time4 = time()
+    #         print("checkpoint4:", time4 - time3)
 
     # Plot the gt boxes
     gt_color = (0, 255, 0)
@@ -150,14 +167,18 @@ def plot_gt_boxes(points, gt_boxes, bev_range, name=None):
                  (int(heading_points[1, 1] / steps), int(heading_points[1, 0] / steps)), gt_color, 3)
 
     # Rotate the canvas to correct direction
+    # canvas = cv2.rotate(canvas, cv2.cv2.ROTATE_90_CLOCKWISE)
     canvas = cv2.flip(canvas, 0)
     canvas = cv2.flip(canvas, 1)
 
     cv2.putText(canvas, "Green: Ground Truth", (10, 35), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                 fontScale=0.6, color=gt_color, thickness=1)
 
-    cv2.imwrite("gt_box_%s.jpg" % name, canvas)
-    print("Image %s saved." % name)
+    if ret:
+        return canvas
+    else:
+        cv2.imwrite("gt_box_%s.jpg" % name, canvas)
+        print("Image %s saved." % name)
 
 
 def plot_gt_det_cmp(points, gt_boxes, det_boxes, bev_range, name=None):

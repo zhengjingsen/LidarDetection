@@ -58,7 +58,7 @@ DATA_PROCESSOR:
     - NAME: sample_points
       NUM_POINTS: {
         'train': 80000,
-        'test': -1
+        'test': 80000
       }
 
     - NAME: shuffle_points
@@ -75,3 +75,34 @@ DATA_PROCESSOR:
         'test': 48000
       }
 
+BAG_INFO:
+  CAR: j7-l4e-00011
+  CALIB_DB_PATH: "/home/jingsen/common/sensor/calib_db/"
+  ODOM_TOPIC: '/navsat/odom'
+  UNIFIED_LIDAR_TOPIC: '/unified/lidar_points'
+  UNIFIED_LIDAR:
+      [ {
+          calib_name: "lidar",
+          calib_date: "20200916",
+          topic: "/livox/lidar/horizon_front",
+          is_main_lidar: true
+        },
+        {
+          calib_name: "side_left_lidar",
+          calib_date: "20201020",
+          topic: "/livox/lidar/horizon_left",
+          is_main_lidar: false
+        },
+        {
+          calib_name: "side_right_lidar",
+          calib_date: "20201118",
+          topic: "/livox/lidar/horizon_right",
+          is_main_lidar: false
+        },
+        {
+          calib_name: "tele_lidar",
+          calib_date: "20200916",
+          topic: "/livox/lidar/tele_front",
+          is_main_lidar: false
+        }
+      ]

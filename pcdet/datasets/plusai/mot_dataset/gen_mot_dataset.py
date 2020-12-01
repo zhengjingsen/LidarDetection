@@ -9,85 +9,54 @@ import os
 import math
 import rosbag
 import argparse
-import bisect
 import json
 import pickle
 import random
-import quaternion
-from tqdm import tqdm
 import numpy as np
-import sensor_msgs.point_cloud2 as pc2
+from tqdm import tqdm
+from pcdet.config import cfg, cfg_from_yaml_file
+from pcdet.utils.common_utils import transform_mtx, create_logger
+from pcdet.datasets.plusai.plusai_bag_dataset import BagMultiframeDataset, BagMultiframeDatasetUnifyLidar
 
-def interpolate_pose(pose1, pose2, t1, t2, t_out):
-  tau = (t_out-t1) / (t2-t1)
-  trans = (1-tau) * pose1[0] + tau * pose2[0]
-  quat = quaternion.slerp(np.quaternion(pose1[1][3], pose1[1][0], pose1[1][1], pose1[1][2]),
-                          np.quaternion(pose2[1][3], pose2[1][0], pose2[1][1], pose2[1][2]),
-                          t1, t2, t_out)
-  return (trans, np.array([quat.x, quat.y, quat.z, quat.w]))
-
-def get_best_pose(timestamp, poses):
-  timestamps, poses = poses
-  after_i = bisect.bisect_left(timestamps, timestamp)
-  # print "timestamp is", timestamp, "after_i is", after_i, "top stamps are", timestamps[:2]
-  before_i = max(0, after_i - 1)
-  after_time = timestamps[after_i]
-  before_time = timestamps[before_i]
-  if after_time - before_time >= 0.02:
-    print("warning, hole of size", after_time - before_time)
-  if before_i == after_i:
-    # print "beep"
-    return poses[before_i]
-  return interpolate_pose(poses[before_i], poses[after_i], before_time, after_time, timestamp)
-
-def process_single_bag(bag_name, data_path):
+def process_single_bag(bag_name, re_unified=True):
+  data_path = args.data_path
   save_path = os.path.join(data_path, 'mot_dataset', bag_name)
   if not os.path.exists(save_path):
     os.makedirs(save_path)
     os.mkdir(save_path + '/pointcloud')
     os.mkdir(save_path + '/label')
-
-  bag_file = os.path.join(data_path, 'bag', bag_name)
-  label_file = os.path.join(data_path, 'label', bag_name + '.json')
-  bag = rosbag.Bag(bag_file)
-
-  odom_list = []
-  for topic, msg, _ in bag.read_messages(topics=args.odom_topic):
-    timestamp = msg.header.stamp.to_sec()
-    pos = np.array([msg.pose.pose.position.x,
-                    msg.pose.pose.position.y,
-                    msg.pose.pose.position.z])
-    quat = np.array([msg.pose.pose.orientation.x,
-                     msg.pose.pose.orientation.y,
-                     msg.pose.pose.orientation.z,
-                     msg.pose.pose.orientation.w])
-    odom_list.append((timestamp, (pos, quat)))
-  odom_list = sorted(odom_list)
-  timestamps = [e[0] for e in odom_list]
-  poses = [e[1] for e in odom_list]
+  else:
+    logger.info('{} has been processed, skip this bag!'.format(save_path))
+    return 'skip'
 
   lidar_timestamps = []
   new_labeling = []
-  for topic, msg, _ in bag.read_messages(topics=args.lidar_topic):
-    timestamp = msg.header.stamp.to_sec()
-    lidar_timestamps.append(timestamp)
-    timestamp_str = '{:.6f}'.format(timestamp)
-    lidar_pts_unified = pc2.read_points(msg)
-    lidar_pts_unified = np.array(list(lidar_pts_unified), dtype=np.float32)[:, :4]
-    intensity = lidar_pts_unified[:, 3].copy()
-    lidar_pts_unified[:, 3] = 1.
-    lidar_pts_unified = np.matmul(lidar_pts_unified, Tr_lidar_to_imu.T)
-    lidar_pts_unified[:, 3] = intensity
-    file_name = os.path.join(save_path, 'pointcloud', timestamp_str + '.bin')
-    # print('Dump lidar frame {} ...'.format(file_name))
-    lidar_pts_unified.tofile(file_name)
-    pose = get_best_pose(timestamp, (timestamps, poses))
-    new_labeling.append({'timestamp': timestamp_str,
-                         'trans': pose[0],
-                         'quat': pose[1],
-                         'bag_name': bag_name,
-                         'obstacle_list': []})
+  bag_file = os.path.join(data_path, 'bag', bag_name)
+  test_set = BagMultiframeDatasetUnifyLidar(cfg.DATA_CONFIG,
+                                            bag_path=bag_file,
+                                            class_names=cfg.CLASS_NAMES,
+                                            stack_frame_size=1,
+                                            model_input=False) if re_unified else \
+      BagMultiframeDataset(cfg.DATA_CONFIG,
+                           bag_path=bag_file,
+                           class_names=cfg.CLASS_NAMES,
+                           stack_frame_size=1,
+                           model_input=False)
+  for timestamp, pose, data_dict in test_set:
+      timestamp_str = '{:.6f}'.format(timestamp)
+      file_name = os.path.join(save_path, 'pointcloud', timestamp_str + '.bin')
+      # print('Dump lidar frame {} ...'.format(file_name))
+      data_dict['points'][:, :4].tofile(file_name)
+      lidar_timestamps.append(timestamp)
+      new_labeling.append({'timestamp': timestamp_str,
+                           'trans': pose[0],
+                           'quat': pose[1],
+                           'bag_name': bag_name,
+                           'obstacle_list': []})
+  if len(new_labeling) == 0:
+      return 'no_unifiy_lidar'
 
+  label_file = os.path.join(data_path, 'label', bag_name + '.json')
   with open(label_file) as f:
     labeling = json.load(f, encoding='utf-8')
 
@@ -111,24 +80,26 @@ def process_single_bag(bag_name, data_path):
     label.update({'frame_index': i})
     with open(os.path.join(save_path, 'label', label['timestamp'] + '.pkl'), 'wb') as f:
       pickle.dump(label, f)
+  return 'done'
 
 def preprocess_dataset():
-  label_files = os.listdir(os.path.join(args.data_path, 'label'))
-  bag_files = os.listdir(os.path.join(args.data_path, 'bag'))
-  for label_file in tqdm(label_files):
-    if not label_file.endswith('json'):
-      continue
-    bag_name = label_file[:-5]
-    if bag_name not in bag_files:
-      continue
-    # print('Processing bag {} ...'.format(bag_name))
-    process_single_bag(bag_name, args.data_path)
+    import concurrent.futures as futures
+    label_files = os.listdir(os.path.join(args.data_path, 'label'))
+    bag_files = os.listdir(os.path.join(args.data_path, 'bag'))
 
-def transform_mtx(trans, quat):
-  pose = np.eye(4)
-  pose[0:3, 0:3] = quaternion.as_rotation_matrix(np.quaternion(quat[3], quat[0], quat[1], quat[2]))
-  pose[:3, 3] = trans
-  return pose
+    valid_bags = []
+    for label_file in label_files:
+        if not label_file.endswith('json'):
+            continue
+        bag_name = label_file[:-5]
+        if bag_name not in bag_files:
+          continue
+        # print('Processing bag {} ...'.format(bag_name))
+        valid_bags.append(bag_name)
+
+    with futures.ThreadPoolExecutor(args.num_workers) as executor:
+        results = list(tqdm(executor.map(process_single_bag, valid_bags), total=len(valid_bags)))
+        logger.info('Extract data from bag and label result: ', results)
 
 def process_obstacles(obstacles_dict):
   # We will process obstacles from dict to list
@@ -154,27 +125,30 @@ def process_obstacles(obstacles_dict):
                               'velocity' : obstacle[left_idx]['velocity'] * ratio + obstacle[right_idx]['velocity'] * (1. - ratio)})
           # obstacle[i].update({'heading': math.atan2(obstacle[i]['velocity'][1], obstacle[i]['velocity'][0])})
           obstacle[i].update({'heading': (obstacle[left_idx]['heading'] * ratio + obstacle[right_idx]['heading'] * (1. - ratio))})
-        elif obstacle[left_idx]:
+        elif obstacle[left_idx] and obstacle[left_idx]['velocity'][0] > -20.0:
           obstacle[i].update(obstacle[left_idx])
           obstacle[i].update(
             {'location': obstacle[left_idx]['location'] + obstacle[left_idx]['velocity'] * 0.1 * (i - left_idx)})     # 0.1 means 100ms
-        elif obstacle[right_idx]:
+        elif obstacle[right_idx] and obstacle[right_idx]['velocity'][0] > -20.0:
           obstacle[i].update(obstacle[right_idx])
           obstacle[i].update(
             {'location': obstacle[right_idx]['location'] + obstacle[right_idx]['velocity'] * 0.1 * (i - right_idx)})  # 0.1 means 100ms
+        else:
+            return False
         left_idx = i
+    return True
 
   obstacles = []
   for _, obs in obstacles_dict.items():
-    process_single_instance(obs)
-    obstacles.append(obs)
+    if process_single_instance(obs):
+        obstacles.append(obs)
   return obstacles
 
 def get_obstacle_class(obstacle):
-  if obstacle['size'][0] < 5.0:
+  if obstacle['size'][0] < 6.0:
       return 'Car'
-  elif obstacle['size'][0] < 11.0 and obstacle['size'][2] > 3.0:
-      return 'Bus'
+  # elif obstacle['size'][0] < 11.0 and obstacle['size'][2] > 3.0:
+  #     return 'Bus'
   else:
       return 'Truck'
 
@@ -189,20 +163,26 @@ def obstacle_attr_statistics(obstacles):
         obstacle_attr[class_name]['bottom_height_sum'] += (obs[1]['location'][2] - obs[1]['size'][2] / 2)
         obstacle_attr[class_name]['num'] += 1
 
-def prepare_multiframe_dataset():
+def is_stack_frame_valid(stack_labels):
+    max_time_step = 0.15
+    for i in range(len(stack_labels) - 1):
+        if abs(float(stack_labels[i]['timestamp']) - float(stack_labels[i+1]['timestamp'])) > max_time_step:
+            return False
+    return True
+
+def prepare_multiframe_scenes(scene_list, data_path):
     stack_frame_size = 3
     base_frame_index = 1    # stack frame is 0, 1, 2, all frames will be transformed to base frame coordinate
-    data_path = args.data_path
 
-    lidar_path = os.path.join(data_path, 'multiframe', 'training', 'pointcloud')
-    if not os.path.exists(lidar_path):
-      os.makedirs(lidar_path)
-    label_path = os.path.join(data_path, 'multiframe', 'training', 'label')
-    if not os.path.exists(label_path):
-      os.makedirs(label_path)
-    frame_idx = 0
+    for scene_name in tqdm(scene_list):
+        lidar_path = os.path.join(data_path, 'multiframe', scene_name, 'pointcloud')
+        if not os.path.exists(lidar_path):
+            os.makedirs(lidar_path)
+        label_path = os.path.join(data_path, 'multiframe', scene_name, 'label')
+        if not os.path.exists(label_path):
+            os.makedirs(label_path)
+        frame_idx = 0
 
-    for scene_name in tqdm(os.listdir(os.path.join(data_path, 'mot_dataset'))):
         file_list = os.listdir(os.path.join(data_path, 'mot_dataset', scene_name, 'label'))
         file_list.sort()
         num_frames = len(file_list)
@@ -225,6 +205,9 @@ def prepare_multiframe_dataset():
                 point_cloud = np.fromfile(pcd_file_name, dtype=np.float32).reshape([-1, 4])
                 point_cloud = np.concatenate((point_cloud, np.ones((point_cloud.shape[0], 1), dtype=np.float32) * idx2), axis=-1)
                 stack_pcds.append(point_cloud)
+            if not is_stack_frame_valid(stack_labels):
+                logger.info('Stack frame {} in scene {} is uncontinuous, we will skip this frame!'.format(stack_labels[base_frame_index]['timestamp'], scene_name))
+                continue
 
             final_labels = {'timestamp': stack_labels[base_frame_index]['timestamp'],
                             'trans': stack_labels[base_frame_index]['trans'],
@@ -239,11 +222,22 @@ def prepare_multiframe_dataset():
               stack_pcds[i][:, 0:3] = (np.matmul(delta_pose[0:3, 0:3], stack_pcds[i][:, 0:3].T) + delta_pose[0:3, 3:]).T
               for obs in stack_labels[i]['obstacle_list']:
                 uuid = obs['uuid']
+                if obs['position']['x'] is None or obs['position']['y'] is None or obs['position']['z'] is None:
+                  logger.info('WARNING: obs {} in scene {} has invalid position({}, {}, {}), please check!'.format(uuid, scene_name, obs['position']['x'], obs['position']['y'], obs['position']['z']))
+                  continue
+                if obs['direction']['x'] is None or obs['direction']['y'] is None:
+                  logger.info('WARNING: obs {} in scene {} has invalid direction({}, {}), please check!'.format(uuid, scene_name, obs['direction']['x'], obs['direction']['y']))
+                  continue
+                if obs['velocity']['x'] is None or obs['velocity']['y'] is None or obs['velocity']['z'] is None:
+                  logger.info('WARNING: obs {} in scene {} has invalid velocity({}, {}, {}), please check!'.format(uuid, scene_name, obs['velocity']['x'], obs['velocity']['y'], obs['velocity']['z']))
+                  velocity = np.array([-100.0, 0.0, 0.0])
+                else:
+                  velocity = np.matmul(delta_pose[0:3, 0:3],
+                                       np.array([obs['velocity']['x'], obs['velocity']['y'], obs['velocity']['z']]).T)
                 if not uuid in obstacles:
                   obstacles[uuid] = [{} for _ in range(stack_frame_size)]
 
                 location = np.matmul(delta_pose[0:3, 0:3], np.array([obs['position']['x'], obs['position']['y'], obs['position']['z']]).T) + delta_pose[0:3, 3]
-                velocity = np.matmul(delta_pose[0:3, 0:3], np.array([obs['velocity']['x'], obs['velocity']['y'], obs['velocity']['z']]).T)
                 obstacles[uuid][i] = {'class': get_obstacle_class(obs),
                                       'size': obs['size'],
                                       'is_front_car': obs['is_front_car'],
@@ -272,52 +266,224 @@ def prepare_multiframe_dataset():
                                    )
               mayavi.mlab.show()
 
+def prepare_multiframe_dataset():
+    data_path = args.data_path
+
+    all_scene_list = os.listdir(os.path.join(data_path, 'mot_dataset'))
+    prepare_multiframe_scenes(all_scene_list, data_path)
+    
+    # random.shuffle(all_scene_list)
+    # train_ratio = 0.8
+    # boundary = int(train_ratio * len(all_scene_list))
+    # train_split = all_scene_list[0:boundary]
+    # train_split.sort()
+    # test_split = all_scene_list[boundary:]
+    # test_split.sort()
+
+    # prepare_multiframe_scenes(train_split, data_path, 'train')
+    # prepare_multiframe_scenes(test_split, data_path, 'test')
+
+    # with open(os.path.join(data_path, 'multiframe', 'all_scene_list.txt'), 'w') as f:
+    #     f.write('train_scene_list:\n')
+    #     for scene in train_split:
+    #         f.write(scene + '\n')
+    #     f.write('\ntest_scene_list:\n')
+    #     for scene in test_split:
+    #         f.write(scene + '\n')
+
     for key, val in obstacle_attr.items():
       mean_size = val['size_sum'] / val['num']
       mean_bottom_height = val['bottom_height_sum'] / val['num']
-      print('{} mean size: [{:.2f}, {:.2f}, {:.2f}], mean bottom height: {:.2f}, number: {}'.format(key, mean_size[0], mean_size[1], mean_size[2], mean_bottom_height, val['num']))
+      logger.info('{} mean size: [{:.2f}, {:.2f}, {:.2f}], mean bottom height: {:.2f}, number: {}'.format(key, mean_size[0], mean_size[1], mean_size[2], mean_bottom_height, val['num']))
+
 
 def get_images_sets():
-  train_ratio = 0.7
+  all_scene_list = [ \
+      '20201113T154121_j7-l4e-00011_4_70to90.bag', \
+      '20201124T151221_j7-l4e-00011_6_121to141.bag', \
+      '20201124T151221_j7-l4e-00011_27_0to20.bag', \
+      '20201112T154947_j7-l4e-00011_26_5to25.bag', \
+      '20201110T163005_j7-l4e-00011_6_93to113.bag', \
+      '20201112T102738_j7-l4e-00011_12_249to269.bag', \
+      '20201109T152801_j7-l4e-00011_18_146to166.bag', \
+      '20201112T102738_j7-l4e-00011_11_172to192.bag', \
+      '20201112T102738_j7-l4e-00011_11_83to103.bag', \
+      '20201111T163124_j7-l4e-00011_18_184to204.bag', \
+      '20201112T154947_j7-l4e-00011_25_191to211.bag', \
+      '20201113T154121_j7-l4e-00011_0_249to269.bag', \
+      '20201110T163005_j7-l4e-00011_7_38to58.bag', \
+      '20201113T154121_j7-l4e-00011_5_193to213.bag', \
+      '20201124T151221_j7-l4e-00011_25_119to139.bag', \
+      '20201124T151221_j7-l4e-00011_13_2to22.bag', \
+      '20201110T163005_j7-l4e-00011_5_219to239.bag', \
+      '20201124T151221_j7-l4e-00011_4_223to243.bag', \
+      '20201113T154121_j7-l4e-00011_2_16to36.bag', \
+      '20201111T163124_j7-l4e-00011_2_22to42.bag', \
+      '20201111T161204_j7-l4e-00011_3_30to50.bag', \
+      '20201124T151221_j7-l4e-00011_22_31to51.bag', \
+      '20201111T163124_j7-l4e-00011_17_198to218.bag', \
+      '20201110T163005_j7-l4e-00011_7_249to269.bag', \
+      '20201112T140545_j7-l4e-00011_6_149to169.bag', \
+      '20201112T154947_j7-l4e-00011_26_27to47.bag', \
+      '20201124T151221_j7-l4e-00011_27_131to151.bag', \
+      '20201124T151221_j7-l4e-00011_25_41to61.bag', \
+      '20201109T152801_j7-l4e-00011_29_251to271.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000005.bag', \
+      '20201109T152801_j7-l4e-00011_9_198to218.bag', \
+      '20201112T102738_j7-l4e-00011_3_207to227.bag', \
+      '20201112T102738_j7-l4e-00011_14_23to43.bag', \
+      '20201113T154121_j7-l4e-00011_2_72to92.bag', \
+      '20201109T152801_j7-l4e-00011_33_167to187.bag', \
+      '20201113T154121_j7-l4e-00011_1_3to23.bag', \
+      '20201117T140821_j7-l4e-00011_21_231to251.bag', \
+      '20201117T140821_j7-l4e-00011_22_144to164.bag', \
+      '20201124T151221_j7-l4e-00011_3_49to69.bag', \
+      '20201124T151221_j7-l4e-00011_26_183to203.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000009.bag', \
+      '20201111T163124_j7-l4e-00011_0_97to117.bag', \
+      '20201110T163005_j7-l4e-00011_6_72to92.bag', \
+      '20201124T151221_j7-l4e-00011_20_242to262.bag', \
+      '20201111T163124_j7-l4e-00011_0_3to23.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000007.bag', \
+      '20201112T140545_j7-l4e-00011_6_0to20.bag', \
+      '20201124T151221_j7-l4e-00011_22_215to235.bag', \
+      '20201109T152801_j7-l4e-00011_12_16to36.bag', \
+      '20201109T152801_j7-l4e-00011_9_33to53.bag', \
+      '20201111T163124_j7-l4e-00011_18_69to89.bag', \
+      '20201117T140821_j7-l4e-00011_22_19to39.bag', \
+      '20201112T102738_j7-l4e-00011_12_188to208.bag', \
+      '20201113T154121_j7-l4e-00011_0_30to50.bag', \
+      '20201109T152801_j7-l4e-00011_32_75to95.bag', \
+      '20201117T140821_j7-l4e-00011_12_153to173.bag', \
+      '20201124T151221_j7-l4e-00011_28_138to158.bag', \
+      '20201109T152801_j7-l4e-00011_32_11to31.bag', \
+      '20201109T152801_j7-l4e-00011_9_256to276.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000000.bag', \
+      '20201124T151221_j7-l4e-00011_27_49to69.bag', \
+      '20201113T154121_j7-l4e-00011_5_145to165.bag', \
+      '20201124T151221_j7-l4e-00011_27_208to228.bag', \
+      '20201109T152801_j7-l4e-00011_7_1to21.bag', \
+      '20201112T154947_j7-l4e-00011_26_74to94.bag', \
+      '20201124T151221_j7-l4e-00011_4_130to150.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000008.bag', \
+      '20201112T140545_j7-l4e-00011_6_179to199.bag', \
+      '20201112T102738_j7-l4e-00011_12_106to126.bag', \
+      '20201111T163124_j7-l4e-00011_0_39to59.bag', \
+      '20201124T151221_j7-l4e-00011_25_0to20.bag', \
+      '20201109T152801_j7-l4e-00011_27_144to164.bag', \
+      '20201124T151221_j7-l4e-00011_26_40to60.bag', \
+      '20201112T140545_j7-l4e-00011_6_108to128.bag', \
+      '20201111T163124_j7-l4e-00011_9_9to29.bag', \
+      '20201113T154121_j7-l4e-00011_5_50to70.bag', \
+      '20201111T163124_j7-l4e-00011_5_99to119.bag', \
+      '20201112T102738_j7-l4e-00011_11_244to264.bag', \
+      '20201113T154121_j7-l4e-00011_6_29to49.bag', \
+      '20201112T102738_j7-l4e-00011_14_5to25.bag', \
+      '20201124T151221_j7-l4e-00011_28_0to20.bag', \
+      '20201117T140821_j7-l4e-00011_23_138to158.bag', \
+      '20201124T151221_j7-l4e-00011_3_189to209.bag', \
+      '20201113T154121_j7-l4e-00011_3_48to68.bag', \
+      '20201109T152801_j7-l4e-00011_9_136to156.bag', \
+      '20201113T154121_j7-l4e-00011_5_110to130.bag', \
+      '20201112T154947_j7-l4e-00011_19_0to20.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000002.bag', \
+      '20201124T151221_j7-l4e-00011_28_26to46.bag', \
+      '20201110T163005_j7-l4e-00011_6_28to48.bag', \
+      '20201110T163005_j7-l4e-00011_5_140to160.bag', \
+      '20201110T163005_j7-l4e-00011_5_187to207.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000001.bag', \
+      '20201113T154121_j7-l4e-00011_3_90to110.bag', \
+      '20201113T154121_j7-l4e-00011_6_0to20.bag', \
+      '20201124T151221_j7-l4e-00011_24_142to162.bag', \
+      '20201124T151221_j7-l4e-00011_28_75to95.bag', \
+      '20201111T163124_j7-l4e-00011_17_108to128.bag', \
+      '20201117T140821_j7-l4e-00011_20_161to181.bag', \
+      '20201110T163005_j7-l4e-00011_5_248to268.bag', \
+      '20201110T163005_j7-l4e-00011_7_132to152.bag', \
+      '20201109T152801_j7-l4e-00011_18_12to32.bag', \
+      '20201113T154121_j7-l4e-00011_0_207to227.bag', \
+      '20201112T154947_j7-l4e-00011_26_127to147.bag', \
+      '20201110T163005_j7-l4e-00011_5_36to56.bag', \
+      '20201113T154121_j7-l4e-00011_0_67to87.bag', \
+      '20201111T163124_j7-l4e-00011_9_51to71.bag', \
+      '20201111T161204_j7-l4e-00011_3_9to29.bag', \
+      '20201113T154121_j7-l4e-00011_4_210to230.bag', \
+      '20201111T163124_j7-l4e-00011_9_115to135.bag', \
+      '20201113T154121_j7-l4e-00011_3_134to154.bag', \
+      '20201112T102738_j7-l4e-00011_11_120to140.bag', \
+      '20201124T151221_j7-l4e-00011_29_1to21.bag', \
+      '20201111T163124_j7-l4e-00011_18_8to28.bag', \
+      '20201124T151221_j7-l4e-00011_26_241to261.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000011.bag', \
+      '20201109T152801_j7-l4e-00011_18_57to77.bag', \
+      '20201111T161204_j7-l4e-00011_2_50to70.bag', \
+      '20201111T163124_j7-l4e-00011_5_38to58.bag', \
+      '20201110T163005_j7-l4e-00011_6_0to20.bag', \
+      '20201111T163124_j7-l4e-00011_2_163to183.bag', \
+      '20201112T102738_j7-l4e-00011_7_0to19.bag', \
+      '20201117T140821_j7-l4e-00011_23_81to101.bag', \
+      '20201112T102738_j7-l4e-00011_8_232to252.bag', \
+      '20201110T163005_j7-l4e-00011_7_205to225.bag', \
+      '20201109T152801_j7-l4e-00011_36_part000003.bag']
+
+  random.shuffle(all_scene_list)
+  train_ratio = 0.8
+  boundary = int(train_ratio * len(all_scene_list))
+  train_split = all_scene_list[0:boundary]
+  train_split.sort()
+  test_split = all_scene_list[boundary:]
+  test_split.sort()
+
+  select_frame_step = 4
   image_sets_path = os.path.join(args.data_path, 'multiframe', 'ImageSets')
   if not os.path.exists(image_sets_path):
     os.makedirs(image_sets_path)
 
-  frame_list = os.listdir(os.path.join(args.data_path, 'multiframe', 'training', 'pointcloud'))
-  random.shuffle(frame_list)
-
-  boundary = int(train_ratio * len(frame_list))
-  train_split = frame_list[0:boundary]
-  train_split.sort()
-  test_split = frame_list[boundary:]
-  test_split.sort()
-
   with open(os.path.join(image_sets_path, 'train.txt'), 'w') as f:
-    for frame in train_split:
-      f.write(frame.split('.')[0] + '\n')
+    for scene in train_split:
+      idx = 0
+      frame_list = os.listdir(os.path.join(args.data_path, 'multiframe', scene, 'pointcloud'))
+      frame_list.sort()
+      while idx < len(frame_list):
+        f.write(scene + '/pointcloud/' + frame_list[idx] + '\n')
+        idx += select_frame_step
     f.close()
+  
   with open(os.path.join(image_sets_path, 'val.txt'), 'w') as f:
-    for frame in test_split:
-      f.write(frame.split('.')[0] + '\n')
+    for scene in test_split:
+      idx = 0
+      frame_list = os.listdir(os.path.join(args.data_path, 'multiframe', scene, 'pointcloud'))
+      frame_list.sort()
+      while idx < len(frame_list):
+        f.write(scene + '/pointcloud/' + frame_list[idx] + '\n')
+        idx += select_frame_step
     f.close()
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('--data_path', help='directory to data path which should contains bag and label')
-  parser.add_argument('--calib_name', default='', help='lidar calib name')
-  parser.add_argument('--calib_date', default='', help='lidar calib date')
-  parser.add_argument('--calib_dir', default='/opt/plusai/var/calib_db', help='directory to calib db')
-  parser.add_argument('--lidar_topic', default='/unified/lidar_points')
-  parser.add_argument('--odom_topic', default='/navsat/odom')
-  parser.add_argument('--visualize', action='store_true', default=False, help='visualize the multi-frame point cloud')
-  args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_path', help='directory to data path which should contains bag and label')
+    parser.add_argument('--calib_name', default='', help='lidar calib name')
+    parser.add_argument('--calib_date', default='', help='lidar calib date')
+    parser.add_argument('--calib_dir', default='/opt/plusai/var/calib_db', help='directory to calib db')
+    parser.add_argument('--lidar_topic', default='/unified/lidar_points')
+    parser.add_argument('--odom_topic', default='/navsat/odom')
+    parser.add_argument('--cfg_file', type=str, default='/home/jingsen/workspace/OpenPCDet/tools/cfgs/livox_models/pv_rcnn_multiframe.yaml')
+    parser.add_argument('--visualize', action='store_true', default=False, help='visualize the multi-frame point cloud')
+    parser.add_argument('--num_workers', default=6, help='num workers to process label data')
+    args = parser.parse_args()
 
-  # TODO: load lidar extrinsic from calib file
-  Tr_lidar_to_imu = np.array([[9.7485195858863372e-01, -4.5840773586776476e-02, 2.1808808322147416e-01, 4.4884194774399999e+00],
-                              [4.1536075689053195e-02, 9.9884171056766391e-01, 2.4284555619455646e-02, -1.9965142422800002e-02],
-                              [-2.1894868262845490e-01, -1.4615340755379213e-02, 9.7562682116515986e-01, 2.8337476145100000e+00],
-                              [0., 0., 0., 1.]], dtype=np.float32)
+    cfg_from_yaml_file(args.cfg_file, cfg)
 
-  # preprocess_dataset()
-  prepare_multiframe_dataset()
-  get_images_sets()
+    log_file = os.path.join(args.data_path, 'data_preprocessing_log.txt')
+    logger = create_logger(log_file, rank=0)
+
+    # logger.info('=== Start extract point-cloud and annotations from origin bag and label files, this will take a long time ... ===')
+    # preprocess_dataset()
+
+    logger.info('\n\n=== Start process multiframe dataset ... ===')
+    prepare_multiframe_dataset()
+
+    logger.info('\n\n=== Start get image sets ... ===')
+    get_images_sets()
+
+    print('log file saved in {}'.format(log_file))
