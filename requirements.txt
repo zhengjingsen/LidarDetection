@@ -7,3 +7,5 @@ pyyaml
 scikit-image
 tqdm
 numpy-quaternion
+onnx
+onnxruntime
