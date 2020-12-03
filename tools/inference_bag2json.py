@@ -22,7 +22,7 @@ def parse_config():
     parser.add_argument('--bag_file', type=str, default=None, help='specify the bag file to be inferenced')
     parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for inference')
     parser.add_argument('--save_video', default=False, action='store_true')
-    parser.add_argument('--save_path', default='./', help='path to save the inference video')
+    parser.add_argument('--save_path', default='../data/plusai/inference_result/', help='path to save the inference result')
     parser.add_argument('--ckpt', type=str, default=None, help='model checkpoint')
     args = parser.parse_args()
 
@@ -61,6 +61,10 @@ def main():
         video_file_name = os.path.join(args.save_path, 'inf_result_{}.avi'.format(args.bag_file.split('/')[-1][:-4]))
         video_output = cv2.VideoWriter(video_file_name, fourcc, 10.0, (int((bev_range[4] - bev_range[1]) / image_resolution),
                                                                        int((bev_range[3] - bev_range[0]) / image_resolution)))
+    else:
+        image_save_path = os.path.join(args.save_path, 'inf_result_{}'.format(args.bag_file.split('/')[-1]))
+        if not os.path.exists(image_save_path):
+            os.mkdir(image_save_path)
 
     logger.info('-----------------Start inference of OpenPCDet with bag: {}-----------------'.format(args.bag_file))
     # Inference with model
@@ -86,20 +90,27 @@ def main():
             # Update the tracking manager
             tracked_objects = tracking_manager.update_tracking(pred_dicts)
 
+            # det_boxes = tracked_objects['pred_boxes']
+            det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
+            scores = pred_dicts[0]['pred_scores'].cpu().numpy()
+            labels = pred_dicts[0]['pred_labels'].cpu().numpy()
+            # points = batch_dict['points'][:, 1:].cpu().detach().numpy()
+            points = data_dict['points']
+            if mode == 'multi' and det_boxes.size > 0:
+                det_boxes = det_boxes[:, np.newaxis, :].repeat(3, axis=1)
+                frame = plot_multiframe_boxes(points, det_boxes, bev_range,
+                                              scores=scores, labels=labels,
+                                              info='ts: {:.3f}'.format(timestamp))
+            else:
+                frame = plot_gt_boxes(points, det_boxes, bev_range, ret=True)
+
+            cv2.imshow('debug', frame)
+            cv2.waitKey(1)
             # Save video
             if args.save_video:
-                det_boxes = tracked_objects['pred_boxes']
-                # det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
-                # points = batch_dict['points'][:, 1:].cpu().detach().numpy()
-                points = data_dict['points']
-                if mode == 'multi' and det_boxes.size > 0:
-                    det_boxes = det_boxes[:, np.newaxis, :].repeat(3, axis=1)
-                    frame = plot_multiframe_boxes(points, det_boxes, bev_range, info='ts: {:.3f}'.format(timestamp))
-                else:
-                    frame = plot_gt_boxes(points, det_boxes, bev_range, ret=True)
                 video_output.write(frame)
-                cv2.imshow('debug', frame)
-                cv2.waitKey(1)
+            else:
+                cv2.imwrite(os.path.join(image_save_path, '{:0>4d}.png'.format(frame_idx)), frame)
 
             # Format the det result
             for obj_idx in range(tracked_objects['pred_boxes'].shape[0]):
@@ -176,9 +187,10 @@ def main():
         print("Inference results video saved as {}".format(video_file_name))
 
     json_txt = json.dumps(json_dict, indent=4)
-    with open('%s.json' % args.bag_file, 'w') as f:
+    json_file_name = os.path.join(args.save_path, args.bag_file.split('/')[-1] + '.json')
+    with open(json_file_name, 'w') as f:
         f.write(json_txt)
-        print("JSON file saved at %s.json" % args.bag_file)
+        print("JSON file saved at {}".format(json_file_name))
 
 
 if __name__ == '__main__':

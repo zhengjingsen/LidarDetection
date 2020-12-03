@@ -24,7 +24,9 @@ def plot_feature_map(features, channel=None):
 
 # plot function for multi-frame visualization
 def plot_multiframe_boxes(points, boxes, bev_range,
-                          gt_boxes=None, resolution=0.1, info='None'):
+                          gt_boxes=None, resolution=0.1,
+                          scores=None, labels=None,
+                          info=None):
     """ Visualize the boxes.
 
     :param points: lidar points, [N, 3~5]
@@ -41,13 +43,13 @@ def plot_multiframe_boxes(points, boxes, bev_range,
                     (points[:, 2] > bev_range[2]) & (points[:, 2] < bev_range[5])]
 
     # Initialize the plotting canvas
-    pixels_x = int((bev_range[3] - bev_range[0]) / resolution)
-    pixels_y = int((bev_range[4] - bev_range[1]) / resolution)
+    pixels_x = int((bev_range[3] - bev_range[0]) / resolution + 1)
+    pixels_y = int((bev_range[4] - bev_range[1]) / resolution + 1)
     canvas = np.zeros((pixels_x, pixels_y, 3), np.uint8)
 
     # Plot the point cloud
-    loc_x = ((points[:, 0] - bev_range[0]) / resolution).astype(int)
-    loc_y = ((points[:, 1] - bev_range[1]) / resolution).astype(int)
+    loc_x = ((bev_range[3] - points[:, 0]) / resolution).astype(int)
+    loc_y = ((bev_range[4] - points[:, 1]) / resolution).astype(int)
     if points.shape[1] == 5:
         color = np.ones((points.shape[0], 3), dtype=np.uint8) * 32
         # fraction = points[:, -1] / stack_frame_size
@@ -60,14 +62,14 @@ def plot_multiframe_boxes(points, boxes, bev_range,
     else:
         canvas[loc_x, loc_y] = [0, 255, 255]
 
-    def plot_boxes(boxes, color):
+    def plot_boxes(boxes, color, scores, labels):
         assert boxes.shape[1] == len(color)
         for idx in range(boxes.shape[1]):
             cur_color = color[idx]
-            for box in boxes:
+            for i, box in enumerate(boxes):
                 box2d = get_corners_2d(box[idx])
-                box2d[:, 0] -= bev_range[0]
-                box2d[:, 1] -= bev_range[1]
+                box2d[:, 0] = bev_range[3] - box2d[:, 0]
+                box2d[:, 1] = bev_range[4] - box2d[:, 1]
                 # Plot box
                 cv2.line(canvas, (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)),
                          (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)), cur_color, 1)
@@ -81,23 +83,25 @@ def plot_multiframe_boxes(points, boxes, bev_range,
                 heading_points = rot_line_90(box2d[0], box2d[1])
                 cv2.line(canvas, (int(heading_points[0, 1] / resolution), int(heading_points[0, 0] / resolution)),
                          (int(heading_points[1, 1] / resolution), int(heading_points[1, 0] / resolution)), cur_color, 2)
+                if scores is not None and labels is not None and idx == stack_frame_size // 2:
+                    cv2.putText(canvas, str(scores[i]) + ', ' + str(labels[i]),
+                                (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)),
+                                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                                fontScale=0.5, color=cur_color, thickness=2)
 
     # Plot the gt boxes
     gt_colors = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
     if gt_boxes is not None:
-        plot_boxes(gt_boxes, gt_colors)
+        plot_boxes(gt_boxes, gt_colors, None, None)
 
     # Plot the detect boxes
     if boxes is not None:
         dt_colors = [[255, 100, 100], [100, 255, 100], [100, 100, 255]]
-        plot_boxes(boxes, dt_colors)
+        plot_boxes(boxes, dt_colors, scores, labels)
 
-    # Rotate the canvas to correct direction
-    canvas = cv2.flip(canvas, 0)
-    canvas = cv2.flip(canvas, 1)
-
-    cv2.putText(canvas, info, (10, 35), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                fontScale=0.6, color=gt_colors[1], thickness=1)
+    if info is not None:
+        cv2.putText(canvas, info, (10, 35), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.6, color=gt_colors[1], thickness=1)
 
     return canvas
 

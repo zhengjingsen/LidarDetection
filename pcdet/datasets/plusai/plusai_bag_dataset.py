@@ -5,15 +5,17 @@
 @Brief      : 
 '''
 
+import glob
 import rosbag
+import pickle
 import numpy as np
 import sensor_msgs.point_cloud2 as pc2
 from pcdet.utils import common_utils
 from pcdet.datasets import DatasetTemplate
-from pcdet.utils.calibration_plusai import load_lidar_calib
 
 class UnifyLidar(object):
     def __init__(self, bag_info_cfg, bag):
+        from pcdet.utils.calibration_plusai import load_lidar_calib
         car = bag_info_cfg.CAR
         calib_db_path = bag_info_cfg.CALIB_DB_PATH
 
@@ -185,6 +187,7 @@ class BagMultiframeDatasetUnifyLidar(DatasetTemplate):
 class BagMultiframeDataset(DatasetTemplate):
     def __init__(self, dataset_cfg, bag_path, class_names, training=False, logger=None,
                  stack_frame_size=-1, model_input=True):
+        from pcdet.utils.calibration_plusai import load_lidar_calib
         super().__init__(
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, logger=logger)
 
@@ -285,3 +288,51 @@ class BagMultiframeDataset(DatasetTemplate):
         if self.model_input:
             input_dict = self.prepare_data(data_dict=input_dict)
         return base_frame[0], base_frame[1], input_dict
+
+class DemoDataset(DatasetTemplate):
+    def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None, ext='.bin'):
+        """
+        Args:
+            root_path:
+            dataset_cfg:
+            class_names:
+            training:
+            logger:
+        """
+        super().__init__(
+            dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
+        )
+        self.root_path = root_path
+        self.ext = ext
+        self.split = 'test'
+        if self.root_path.is_dir():
+            data_file_list = glob.glob(str(root_path / f'*{self.ext}'))
+        elif str(self.root_path).endswith(self.ext):
+            data_file_list = [self.root_path]
+        elif str(self.root_path).endswith('pkl'):
+            with open(self.root_path, 'rb') as f:
+                self.val_data_list = pickle.load(f)
+                data_file_list = [self.root_path.parent / (info['point_cloud']['lidar_idx']) for info in self.val_data_list]
+            self.split = 'val'
+
+        data_file_list.sort()
+        self.sample_file_list = data_file_list
+
+    def __len__(self):
+        return len(self.sample_file_list)
+
+    def __getitem__(self, index):
+        if self.ext == '.bin':
+            points = np.fromfile(self.sample_file_list[index], dtype=np.float32).reshape(-1, 5)
+        elif self.ext == '.npy':
+            points = np.load(self.sample_file_list[index])
+        else:
+            raise NotImplementedError
+
+        input_dict = {
+            'points': points,
+            'frame_id': index,
+        }
+
+        data_dict = self.prepare_data(data_dict=input_dict)
+        return data_dict

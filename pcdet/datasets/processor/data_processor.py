@@ -90,7 +90,9 @@ class DataProcessor(object):
         points = data_dict['points']
         if num_points < len(points):
             pts_depth = np.linalg.norm(points[:, 0:3], axis=1)
-            pts_near_flag = pts_depth < 40.0
+            # pts_azimuth = np.abs(points[:, 1] / points[:, 0])
+            # pts_near_flag = (pts_depth < 60.0) & (pts_azimuth < 0.58)
+            pts_near_flag = pts_depth < config.SAMPLE_DISTANCE_THRESH
             far_idxs_choice = np.where(pts_near_flag == 0)[0]
             near_idxs = np.where(pts_near_flag == 1)[0]
             # print('num_points: ', num_points, ', total_num_points: ', len(points), ', num_far_points: ', len(far_idxs_choice))

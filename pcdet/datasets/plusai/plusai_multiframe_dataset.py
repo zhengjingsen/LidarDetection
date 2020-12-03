@@ -103,50 +103,43 @@ class PlusAIMultiframeDataset(DatasetTemplate):
             if has_label:
                 obj_labels = self.get_label(sample_idx)
                 obj_labels = obj_labels['obstacles']
-                # if len(obj_labels) == 0:
-                #     print('Error occured, obstacle list is empty for sample_{}!'.format(sample_idx))
-                #     info['annos'] = {}
-                #     return info
 
                 annotations = {}
-                annotations['name'] = np.array([label[self.base_frame_idx]['class'] for label in obj_labels])
-                annotations['truncated'] = np.array([0 for label in obj_labels])
-                annotations['occluded'] = np.array([0 for label in obj_labels])
-                annotations['alpha'] = np.array([0 for label in obj_labels])
-                annotations['bbox'] = np.array([[1, 1, 1, 1] for label in obj_labels])
-                annotations['dimensions'] = np.array([label[self.base_frame_idx]['size'] for label in obj_labels])  # lwh(lidar) format
-                annotations['location'] = np.array([label[self.base_frame_idx]['location'] for label in obj_labels])
-                annotations['rotation_y'] = np.array([label[self.base_frame_idx]['heading'] for label in obj_labels])
-                annotations['score'] = np.array([1 for label in obj_labels])
-                annotations['difficulty'] = np.array([0 for label in obj_labels], np.int32)
-
-                # multi-frame data
-                annotations['locations'] = np.array([[label['location'] for label in obj] for obj in obj_labels])
-                annotations['rotations_y'] = np.array([[label['heading'] for label in obj] for obj in obj_labels])
-                annotations['velocities'] = np.array([[label['velocity'] for label in obj] for obj in obj_labels])
-
-                # num_objects = len([label['name'] for label in obj_labels if label['name'] != 'DontCare'])
-                num_objects = len([name for name in annotations['name'] if name != 'DontCare'])
-                num_gt = len(annotations['name'])
-                index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
-                annotations['index'] = np.array(index, dtype=np.int32)
-
                 if len(obj_labels) > 0:
+                    annotations['name'] = np.array([label[self.base_frame_idx]['class'] for label in obj_labels])
+                    annotations['truncated'] = np.array([0 for label in obj_labels])
+                    annotations['occluded'] = np.array([0 for label in obj_labels])
+                    annotations['alpha'] = np.array([0 for label in obj_labels])
+                    annotations['bbox'] = np.array([[1, 1, 1, 1] for label in obj_labels])
+                    annotations['dimensions'] = np.array([label[self.base_frame_idx]['size'] for label in obj_labels])  # lwh(lidar) format
+                    annotations['location'] = np.array([label[self.base_frame_idx]['location'] for label in obj_labels])
+                    annotations['rotation_y'] = np.array([label[self.base_frame_idx]['heading'] for label in obj_labels])
+                    annotations['score'] = np.array([1 for label in obj_labels])
+                    annotations['difficulty'] = np.array([0 for label in obj_labels], np.int32)
+
+                    # multi-frame data
+                    annotations['locations'] = np.array([[label['location'] for label in obj] for obj in obj_labels])
+                    annotations['rotations_y'] = np.array([[label['heading'] for label in obj] for obj in obj_labels])
+                    annotations['velocities'] = np.array([[label['velocity'] for label in obj] for obj in obj_labels])
+
+                    # num_objects = len([label['name'] for label in obj_labels if label['name'] != 'DontCare'])
+                    num_objects = len([name for name in annotations['name'] if name != 'DontCare'])
+                    num_gt = len(annotations['name'])
+                    index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
+                    annotations['index'] = np.array(index, dtype=np.int32)
+
                     loc = annotations['location'][:num_objects]
-                    dims = annotations['dimensions'][:num_objects]
+                    dims = annotations['dimensions'][:num_objects] # l, w, h
                     rots = annotations['rotation_y'][:num_objects]
-                    loc_lidar = loc
-                    l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
-                    gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, rots[..., np.newaxis]], axis=1)
+                    gt_boxes_lidar = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1)
+                    annotations['gt_boxes_lidar'] = gt_boxes_lidar
+
+                    # if count_inside_pts:
+                    #     # annotations['num_points_in_gt'] = np.array([label['num_points_in_gt'] for label in obj_labels])
+                    #     annotations['num_points_in_gt'] = np.array([20 for label in obj_labels])
                 else:
                     print('obstacle size is zero in {}'.format(sample_idx))
-                    gt_boxes_lidar = np.array([])
-                annotations['gt_boxes_lidar'] = gt_boxes_lidar
                 info['annos'] = annotations
-
-                if count_inside_pts:
-                    # annotations['num_points_in_gt'] = np.array([label['num_points_in_gt'] for label in obj_labels])
-                    annotations['num_points_in_gt'] = np.array([20 for label in obj_labels])
 
             return info
 
@@ -157,6 +150,7 @@ class PlusAIMultiframeDataset(DatasetTemplate):
 
     def create_groundtruth_database(self, info_path=None, used_classes=None, split='train'):
         import torch
+        from tqdm import tqdm
 
         database_save_path = Path(self.root_path) / ('gt_database' if split == 'train' else ('gt_database_%s' % split))
         db_info_save_path = Path(self.root_path) / ('plusai_dbinfos_%s.pkl' % split)
@@ -167,20 +161,20 @@ class PlusAIMultiframeDataset(DatasetTemplate):
         with open(info_path, 'rb') as f:
             infos = pickle.load(f)
 
-        for k in range(len(infos)):
-            print('gt_database sample: %d/%d' % (k + 1, len(infos)))
+        for k in tqdm(range(len(infos))):
+            # print('gt_database sample: %d/%d' % (k + 1, len(infos)))
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
             points = self.get_lidar(sample_idx)
             annos = info['annos']
 
+            if not annos:
+                continue
             names = annos['name']
             difficulty = annos['difficulty']
             bbox = annos['bbox']
             gt_boxes = annos['gt_boxes_lidar']
             num_obj = gt_boxes.shape[0]
-            if not num_obj > 0:
-                continue
 
             cur_gt_boxes = gt_boxes.copy()
             point_indices = np.zeros([num_obj, points.shape[0]], dtype=np.int32)
@@ -333,17 +327,25 @@ class PlusAIMultiframeDataset(DatasetTemplate):
 
         if 'annos' in info:
             annos = info['annos']
-            annos = common_utils.drop_info_with_name(annos, name='DontCare')
-            loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
-            gt_names = annos['name']
-            gt_boxes_lidar = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1).astype(np.float32)
+            if not annos:
+                input_dict.update({
+                    'gt_names': np.array([], dtype='<U12'),
+                    'gt_boxes': np.array([], dtype=np.float32).reshape(0, 7),
+                    'locations': np.array([], dtype=np.float32).reshape(0, 3, 3),
+                    'rotations_y': np.array([], dtype=np.float32).reshape(0, 3)
+                })
+            else:
+                annos = common_utils.drop_info_with_name(annos, name='DontCare')
+                # loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
+                # gt_names = annos['name']
+                # gt_boxes_lidar = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1).astype(np.float32)
 
-            input_dict.update({
-                'gt_names': gt_names,
-                'gt_boxes': gt_boxes_lidar,
-                'locations': annos['locations'],
-                'rotations_y': annos['rotations_y']
-            })
+                input_dict.update({
+                    'gt_names': annos['name'],
+                    'gt_boxes': annos['gt_boxes_lidar'],
+                    'locations': annos['locations'],
+                    'rotations_y': annos['rotations_y']
+                })
 
         data_dict = self.prepare_data(data_dict=input_dict)
         data_dict['image_shape'] = img_shape
