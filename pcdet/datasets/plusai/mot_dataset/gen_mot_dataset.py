@@ -72,8 +72,11 @@ def process_single_bag(bag_name, re_unified=True):
         if abs(ts - obs_timestamp) < min_diff:
           min_diff = abs(ts - obs_timestamp)
           min_idx = idx
-      observation.update({'size': size, 'uuid': uuid})
-      new_labeling[min_idx]['obstacle_list'].append(observation)
+      if min_diff < 0.001:
+          observation.update({'size': size, 'uuid': uuid})
+          new_labeling[min_idx]['obstacle_list'].append(observation)
+      else:
+          logger.info('obstacle {} at time {:.6f} does not have correspond pointcloud, min_time_diff is {:.3f}, skip these annotation'.format(uuid, obs_timestamp, min_diff))
 
   for i in range(1, len(new_labeling) - 1): # since the first and the last frame maybe not labeled, we get rid of them
     label = new_labeling[i]
@@ -140,6 +143,8 @@ def process_obstacles(obstacles_dict):
 
   obstacles = []
   for _, obs in obstacles_dict.items():
+    if not obs[1]:    # if current frame has not annotation, skip this obstacle
+        continue
     if process_single_instance(obs):
         obstacles.append(obs)
   return obstacles
@@ -459,12 +464,26 @@ def get_images_sets():
         idx += select_frame_step
     f.close()
 
+def gen_single_frame_dataset():
+    data_path = '/media/jingsen/data/Dataset/plusai/mot_dataset/'
+    val_list_file = '/media/jingsen/data/Dataset/plusai/mot_dataset/ImageSets/val.txt'
+
+    sample_id_list = [x.strip() for x in open(val_list_file).readlines()]
+    cur_bag_name = ''
+    with open(os.path.join(data_path, 'val_single_frame.txt'), 'w') as f:
+        for sample in sample_id_list:
+            bag_name, _, pointcloud_idx = sample.split('/')
+            if cur_bag_name != bag_name:
+                cur_bag_name = bag_name
+                bag_frame_list = os.listdir(os.path.join(data_path, cur_bag_name, 'pointcloud'))
+                bag_frame_list.sort()
+            f.write(os.path.join(bag_name, 'pointcloud', bag_frame_list[int(pointcloud_idx[:-4]) + 1]) + '\n')
+        f.close()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', help='directory to data path which should contains bag and label')
-    parser.add_argument('--calib_name', default='', help='lidar calib name')
-    parser.add_argument('--calib_date', default='', help='lidar calib date')
-    parser.add_argument('--calib_dir', default='/opt/plusai/var/calib_db', help='directory to calib db')
     parser.add_argument('--lidar_topic', default='/unified/lidar_points')
     parser.add_argument('--odom_topic', default='/navsat/odom')
     parser.add_argument('--cfg_file', type=str, default='/home/jingsen/workspace/OpenPCDet/tools/cfgs/livox_models/pv_rcnn_multiframe.yaml')
@@ -483,7 +502,7 @@ if __name__ == '__main__':
     logger.info('\n\n=== Start process multiframe dataset ... ===')
     prepare_multiframe_dataset()
 
-    logger.info('\n\n=== Start get image sets ... ===')
-    get_images_sets()
+    # logger.info('\n\n=== Start get image sets ... ===')
+    # get_images_sets()
 
     print('log file saved in {}'.format(log_file))

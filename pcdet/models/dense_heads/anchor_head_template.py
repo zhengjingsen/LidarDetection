@@ -28,6 +28,7 @@ class AnchorHeadTemplate(nn.Module):
             anchor_generator_cfg, grid_size=grid_size, point_cloud_range=point_cloud_range,
             anchor_ndim=self.box_coder.code_size
         )
+        # anchor: list [B * FeatureMap_SizeX * FeatureMap_SizeY * num_anchors * num_angles * num_anchor_dims, ...], num_classes
         self.anchors = [x.cuda() for x in anchors]
         self.target_assigner = self.get_target_assigner(anchor_target_cfg)
 

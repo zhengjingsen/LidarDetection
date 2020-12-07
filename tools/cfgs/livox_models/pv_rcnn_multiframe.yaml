@@ -11,14 +11,14 @@ DATA_CONFIG:
               DB_INFO_PATH:
                   - plusai_dbinfos_train.pkl
               PREPARE: {
-                 filter_by_min_points: ['Car:5', 'Truck:5'],
+                 filter_by_min_points: ['Car:1', 'Truck:1'],
                  filter_by_difficulty: [-1],
               }
 
-              SAMPLE_GROUPS: ['Car:8','Truck:5']
+              SAMPLE_GROUPS: ['Car:0','Truck:0']
               NUM_POINT_FEATURES: 5
               DATABASE_WITH_FAKELIDAR: False
-              SAMPLE_ROT_ANGLE: [-0.087, 0.087]
+              #SAMPLE_ROT_ANGLE: [-0.087, 0.087]
               REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
               REMOVE_SAMPLE_BOXES_EXTRA_WIDTH: [1.0, 0.5, 0]
               LIMIT_WHOLE_SCENE: False
@@ -44,7 +44,7 @@ MODEL:
 
     MAP_TO_BEV:
         NAME: HeightCompression
-        NUM_BEV_FEATURES: 512
+        NUM_BEV_FEATURES: 256
 
     BACKBONE_2D:
         NAME: BaseBEVBackbone
@@ -63,6 +63,7 @@ MODEL:
         DIR_OFFSET: 0.78539
         DIR_LIMIT_OFFSET: 0.0
         NUM_DIR_BINS: 2
+        USE_MULTIFRAME_ENLARGED_GT_BOXES: True
 
         ANCHOR_GENERATOR_CONFIG: [
             {
@@ -77,7 +78,7 @@ MODEL:
             },
             {
                 'class_name': 'Truck',
-                'anchor_sizes': [[10.70, 2.75, 4.24]],
+                'anchor_sizes': [[10.70, 2.75, 4.24], [ 6.53, 2.62, 4.62 ]],
                 'anchor_rotations': [0, 1.57],
                 'anchor_bottom_heights': [-0.48],
                 'align_center': False,
@@ -85,16 +86,16 @@ MODEL:
                 'matched_threshold': 0.6,
                 'unmatched_threshold': 0.45
             },
-            {
-                'class_name': 'Bus',
-                'anchor_sizes': [ [ 6.53, 2.62, 4.62 ] ],
-                'anchor_rotations': [ 0, 1.57 ],
-                'anchor_bottom_heights': [ -0.68 ],
-                'align_center': False,
-                'feature_map_stride': 8,
-                'matched_threshold': 0.6,
-                'unmatched_threshold': 0.4
-            }
+            # {
+            #     'class_name': 'Bus',
+            #     'anchor_sizes': [ [ 6.53, 2.62, 4.62 ] ],
+            #     'anchor_rotations': [ 0, 1.57 ],
+            #     'anchor_bottom_heights': [ -0.68 ],
+            #     'align_center': False,
+            #     'feature_map_stride': 8,
+            #     'matched_threshold': 0.6,
+            #     'unmatched_threshold': 0.4
+            # }
         ]
 
         TARGET_ASSIGNER_CONFIG:
@@ -110,7 +111,7 @@ MODEL:
                 'cls_weight': 1.0,
                 'loc_weight': 2.0,
                 'dir_weight': 0.2,
-                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                'code_weights': [1.0, 1.0, 0.5, 1.0, 1.0, 0.5, 1.0]
             }
 
     PFE:
@@ -213,12 +214,12 @@ MODEL:
                 'rcnn_cls_weight': 1.0,
                 'rcnn_reg_weight': 1.0,
                 'rcnn_corner_weight': 1.0,
-                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                'code_weights': [1.0, 1.0, 0.5, 1.0, 1.0, 0.5, 1.0]
             }
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
-        SCORE_THRESH: 0.1
+        SCORE_THRESH: 0.25
         OUTPUT_RAW_SCORE: False
 
         EVAL_METRIC: kitti

@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import torch.nn as nn
 
 from .anchor_head_template import AnchorHeadTemplate
@@ -58,8 +59,39 @@ class AnchorHeadSingle(AnchorHeadTemplate):
             dir_cls_preds = None
 
         if self.training:
+            if self.model_cfg.get('USE_MULTIFRAME_ENLARGED_GT_BOXES', False):
+                from pcdet.utils.box_utils import boxes_to_corners_3d
+                from pcdet.utils.common_utils import rotate_points_along_z
+
+                batch_size, num_boxes, boxes_dim = data_dict['gt_boxes'].shape
+                if num_boxes > 0:
+                    stack_frame_size = data_dict['locations'].shape[2]
+                    gt_boxes_corner = []
+                    locations = data_dict['locations'].view(-1, stack_frame_size, 3)
+                    rotations_y = data_dict['rotations_y'].view(-1, stack_frame_size)
+                    gt_boxes = data_dict['gt_boxes'].view(-1, boxes_dim)
+                    cur_gt_boxes = gt_boxes.clone()
+                    for idx in range(stack_frame_size):
+                        cur_gt_boxes[:, 0:3] = locations[:, idx, :]
+                        cur_gt_boxes[:, -1] = rotations_y[:, idx]
+                        gt_boxes_corner.append(boxes_to_corners_3d(cur_gt_boxes))
+                    gt_boxes_corner = torch.cat(gt_boxes_corner, dim=1)
+                    gt_boxes_corner -= gt_boxes[:, None, 0:3]
+                    gt_boxes_corner_local = rotate_points_along_z(gt_boxes_corner, -gt_boxes[:, -2])
+                    multi_length = gt_boxes_corner_local[:, :, 0].max(dim=1)[0] - gt_boxes_corner_local[:, :, 0].min(dim=1)[0]
+                    multi_width = gt_boxes_corner_local[:, :, 1].max(dim=1)[0] - gt_boxes_corner_local[:, :, 1].min(dim=1)[0]
+                    gt_boxes_enlarged = torch.cat(
+                        [gt_boxes[:, 0:3], multi_length[:, None], multi_width[:, None], gt_boxes[:, 5:]],
+                        dim=-1)
+                    gt_boxes = gt_boxes_enlarged.view(batch_size, num_boxes, boxes_dim)
+                else:
+                    gt_boxes = data_dict['gt_boxes']
+                data_dict['gt_boxes_enlarged'] = gt_boxes
+
+            else:
+                gt_boxes = data_dict['gt_boxes']
             targets_dict = self.assign_targets(
-                gt_boxes=data_dict['gt_boxes']
+                gt_boxes=gt_boxes
             )
             self.forward_ret_dict.update(targets_dict)
 

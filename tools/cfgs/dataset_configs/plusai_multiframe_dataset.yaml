@@ -57,9 +57,10 @@ DATA_PROCESSOR:
 
     - NAME: sample_points
       NUM_POINTS: {
-        'train': 80000,
-        'test': 80000
+        'train': 120000,
+        'test': 120000
       }
+      SAMPLE_DISTANCE_THRESH: 40.0
 
     - NAME: shuffle_points
       SHUFFLE_ENABLED: {
@@ -68,11 +69,11 @@ DATA_PROCESSOR:
       }
 
     - NAME: transform_points_to_voxels
-      VOXEL_SIZE: [0.05, 0.05, 0.1]
+      VOXEL_SIZE: [0.1, 0.1, 0.2]
       MAX_POINTS_PER_VOXEL: 8
       MAX_NUMBER_OF_VOXELS: {
-        'train': 48000,
-        'test': 48000
+        'train': 60000,
+        'test': 60000
       }
 
 BAG_INFO:
