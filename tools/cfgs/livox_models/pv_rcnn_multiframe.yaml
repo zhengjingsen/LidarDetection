@@ -206,6 +206,8 @@ MODEL:
 
             REG_FG_THRESH: 0.55
 
+            REG_TRACKING_INFO: True
+
         LOSS_CONFIG:
             CLS_LOSS: BinaryCrossEntropy
             REG_LOSS: smooth-l1
@@ -214,7 +216,7 @@ MODEL:
                 'rcnn_cls_weight': 1.0,
                 'rcnn_reg_weight': 1.0,
                 'rcnn_corner_weight': 1.0,
-                'code_weights': [1.0, 1.0, 0.5, 1.0, 1.0, 0.5, 1.0]
+                'code_weights': [1.0, 1.0, 0.5, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]
             }
 
     POST_PROCESSING:

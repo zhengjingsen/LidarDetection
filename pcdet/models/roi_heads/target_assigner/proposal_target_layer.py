@@ -79,10 +79,11 @@ class ProposalTargetLayer(nn.Module):
         roi_labels = batch_dict['roi_labels']
         gt_boxes = batch_dict['gt_boxes']
         gt_boxes_enlarged = batch_dict.get('gt_boxes_enlarged', gt_boxes)
+        assign_tracking_target = self.roi_sampler_cfg.get('REG_TRACKING_INFO', False)
 
         code_size = rois.shape[-1]
         batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
-        batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size + 1)
+        batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size + 1 + (8 if assign_tracking_target else 0))
         batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
         batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
         batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
@@ -114,7 +115,11 @@ class ProposalTargetLayer(nn.Module):
 
             if batch_dict.get('gt_boxes_enlarged', None) is not None:
                 cur_gt = gt_boxes[index][:k + 1]
-                cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
+            if assign_tracking_target:
+                locations = batch_dict['locations'][index][:k + 1]
+                rotations_y = batch_dict['rotations_y'][index][:k + 1]
+                cur_gt = torch.cat([cur_gt, locations[:, 1, :] - locations[:, 0, :], locations[:, 2, :] - locations[:, 1, :], rotations_y[:, [0, 1]]], dim=-1)
+            cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
             batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 
         return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels

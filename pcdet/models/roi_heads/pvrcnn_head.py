@@ -45,7 +45,7 @@ class PVRCNNHead(RoIHeadTemplate):
         )
         self.reg_layers = self.make_fc_layers(
             input_channels=pre_channel,
-            output_channels=self.box_coder.code_size * self.num_class,
+            output_channels=self.box_coder.code_size * self.num_class + (8 if self.model_cfg.TARGET_CONFIG.get('REG_TRACKING_INFO', False) else 0),
             fc_list=self.model_cfg.REG_FC
         )
         self.init_weights(weight_init='xavier')

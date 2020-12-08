@@ -153,6 +153,10 @@ class RoIHeadTemplate(nn.Module):
                 gt_boxes3d_ct.view(rcnn_batch_size, code_size), rois_anchor
             )
 
+            if self.model_cfg.TARGET_CONFIG.get('REG_TRACKING_INFO', False):
+                gt_tracking_info = forward_ret_dict['gt_of_rois'][..., code_size + 1:].view(rcnn_batch_size, -1)
+                reg_targets = torch.cat([reg_targets, gt_tracking_info], dim=-1)
+
             rcnn_loss_reg = self.reg_loss_func(
                 rcnn_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
                 reg_targets.unsqueeze(dim=0),
@@ -161,6 +165,7 @@ class RoIHeadTemplate(nn.Module):
             rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']
             tb_dict['rcnn_loss_reg'] = rcnn_loss_reg.item()
 
+            rcnn_reg = rcnn_reg[:, 0:code_size]
             if loss_cfgs.CORNER_LOSS_REGULARIZATION and fg_sum > 0:
                 # TODO: NEED to BE CHECK
                 fg_rcnn_reg = rcnn_reg.view(rcnn_batch_size, -1)[fg_mask]
