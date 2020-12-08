@@ -66,7 +66,7 @@ if __name__ == '__main__':
         EasyDict({
             'anchor_sizes': [[2.1, 4.7, 1.7], [0.86, 0.91, 1.73], [0.84, 1.78, 1.78]],
             'anchor_rotations': [0, 1.57],
-            'anchor_heights': [0, 0.5]
+            'anchor_bottom_heights': [0, 0.5]
         })
     ]
 
@@ -74,6 +74,6 @@ if __name__ == '__main__':
         anchor_range=[-75.2, -75.2, -2, 75.2, 75.2, 4],
         anchor_generator_config=config
     )
-    import pdb
-    pdb.set_trace()
+    # import pdb
+    # pdb.set_trace()
     A.generate_anchors([[188, 188]])

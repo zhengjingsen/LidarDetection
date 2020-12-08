@@ -87,7 +87,7 @@ class AnchorHeadTemplate(nn.Module):
             loss_utils.WeightedCrossEntropyLoss()
         )
 
-    def assign_targets(self, gt_boxes):
+    def assign_targets(self, gt_boxes, gt_boxes_enlarged=None):
         """
         Args:
             gt_boxes: (B, M, 8)
@@ -95,7 +95,7 @@ class AnchorHeadTemplate(nn.Module):
 
         """
         targets_dict = self.target_assigner.assign_targets(
-            self.anchors, gt_boxes
+            self.anchors, gt_boxes, gt_boxes_enlarged=gt_boxes_enlarged
         )
         return targets_dict
 
