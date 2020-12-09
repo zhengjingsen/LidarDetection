@@ -98,20 +98,21 @@ class RoIHeadTemplate(nn.Module):
         batch_dict.pop('batch_index', None)
         return batch_dict
 
-    def assign_targets(self, batch_dict):
-        batch_size = batch_dict['batch_size']
-        with torch.no_grad():
-            targets_dict = self.proposal_target_layer.forward(batch_dict)
+    def transfer_coords(self, gt_of_rois, rois):
+        """
+        Args:
+            gt: (B, N, 4)
+            rois: (B, N, 4)
 
-        rois = targets_dict['rois']  # (B, N, 7 + C)
-        gt_of_rois = targets_dict['gt_of_rois']  # (B, N, 7 + C + 1)
-        targets_dict['gt_of_rois_src'] = gt_of_rois.clone().detach()
-
+        Returns:
+            gt_local: (B, N, 4)
+        """
+        batch_size = gt_of_rois.shape[0]
         # canonical transformation
         roi_center = rois[:, :, 0:3]
-        roi_ry = rois[:, :, 6] % (2 * np.pi)
+        roi_ry = rois[:, :, 3] % (2 * np.pi)
         gt_of_rois[:, :, 0:3] = gt_of_rois[:, :, 0:3] - roi_center
-        gt_of_rois[:, :, 6] = gt_of_rois[:, :, 6] - roi_ry
+        gt_of_rois[:, :, 3] = gt_of_rois[:, :, 3] - roi_ry
 
         # transfer LiDAR coords to local coords
         gt_of_rois = common_utils.rotate_points_along_z(
@@ -119,14 +120,30 @@ class RoIHeadTemplate(nn.Module):
         ).view(batch_size, -1, gt_of_rois.shape[-1])
 
         # flip orientation if rois have opposite orientation
-        heading_label = gt_of_rois[:, :, 6] % (2 * np.pi)  # 0 ~ 2pi
+        heading_label = gt_of_rois[:, :, 3] % (2 * np.pi)  # 0 ~ 2pi
         opposite_flag = (heading_label > np.pi * 0.5) & (heading_label < np.pi * 1.5)
         heading_label[opposite_flag] = (heading_label[opposite_flag] + np.pi) % (2 * np.pi)  # (0 ~ pi/2, 3pi/2 ~ 2pi)
         flag = heading_label > np.pi
         heading_label[flag] = heading_label[flag] - np.pi * 2  # (-pi/2, pi/2)
         heading_label = torch.clamp(heading_label, min=-np.pi / 2, max=np.pi / 2)
+        gt_of_rois[:, :, 3] = heading_label
 
-        gt_of_rois[:, :, 6] = heading_label
+        return gt_of_rois
+
+    def assign_targets(self, batch_dict):
+        with torch.no_grad():
+            targets_dict = self.proposal_target_layer.forward(batch_dict)
+
+        code_size = self.box_coder.code_size
+        rois = targets_dict['rois'][:, :, [0, 1, 2, 6]]  # (B, N, 7 + C)
+        gt_of_rois = targets_dict['gt_of_rois']  # (B, N, 7 + C + 1)
+        targets_dict['gt_of_rois_src'] = gt_of_rois[:, :, 0:code_size].clone().detach()
+
+        gt_of_rois[:, :, [0, 1, 2, 6]] = self.transfer_coords(gt_of_rois[:, :, [0, 1, 2, 6]], rois)
+        if self.model_cfg.TARGET_CONFIG.get('REG_TRACKING_INFO', False):
+            gt_of_rois[:, :, [8, 9, 10, 14]] = self.transfer_coords(gt_of_rois[:, :, [8, 9, 10, 14]], rois)
+            gt_of_rois[:, :, [11, 12, 13, 15]] = self.transfer_coords(gt_of_rois[:, :, [11, 12, 13, 15]], rois)
+
         targets_dict['gt_of_rois'] = gt_of_rois
         return targets_dict
 
@@ -233,6 +250,12 @@ class RoIHeadTemplate(nn.Module):
         return rcnn_loss, tb_dict
 
     def generate_predicted_boxes(self, batch_size, rois, cls_preds, box_preds):
+        def decode_by_roi(preds, roi_ry, roi_xyz):
+            preds = common_utils.rotate_points_along_z(preds.unsqueeze(dim=1), roi_ry).squeeze(dim=1)
+            preds[:, 0:3] += roi_xyz
+            preds[:, 3] += roi_ry
+            return preds
+
         """
         Args:
             batch_size:
@@ -246,18 +269,24 @@ class RoIHeadTemplate(nn.Module):
         code_size = self.box_coder.code_size
         # batch_cls_preds: (B, N, num_class or 1)
         batch_cls_preds = cls_preds.view(batch_size, -1, cls_preds.shape[-1])
-        batch_box_preds = box_preds.view(batch_size, -1, code_size)
+        batch_box_preds = box_preds[..., 0:code_size].view(batch_size, -1, code_size)
 
         roi_ry = rois[:, :, 6].view(-1)
         roi_xyz = rois[:, :, 0:3].view(-1, 3)
         local_rois = rois.clone().detach()
         local_rois[:, :, 0:3] = 0
+        # TODO: NEED TO CHECK
+        local_rois[:, :, 6] = 0
 
         batch_box_preds = self.box_coder.decode_torch(batch_box_preds, local_rois).view(-1, code_size)
 
-        batch_box_preds = common_utils.rotate_points_along_z(
-            batch_box_preds.unsqueeze(dim=1), roi_ry
-        ).squeeze(dim=1)
-        batch_box_preds[:, 0:3] += roi_xyz
-        batch_box_preds = batch_box_preds.view(batch_size, -1, code_size)
+        batch_box_preds[:, [0, 1, 2, 6]] = decode_by_roi(batch_box_preds[:, [0, 1, 2, 6]], roi_ry, roi_xyz)
+        if self.model_cfg.TARGET_CONFIG.get('REG_TRACKING_INFO', False):
+            box_preds_size = box_preds.shape[1]
+            tracking_info = box_preds[..., code_size:].view(-1, box_preds_size - code_size)
+            tracking_info[:, [0, 1, 2, 6]] = decode_by_roi(tracking_info[:, [0, 1, 2, 6]], roi_ry, roi_xyz)
+            tracking_info[:, [3, 4, 5, 7]] = decode_by_roi(tracking_info[:, [3, 4, 5, 7]], roi_ry, roi_xyz)
+            batch_box_preds = torch.cat([batch_box_preds, tracking_info], dim=-1)
+        batch_box_preds = batch_box_preds.view(batch_size, -1, box_preds_size)
+
         return batch_cls_preds, batch_box_preds

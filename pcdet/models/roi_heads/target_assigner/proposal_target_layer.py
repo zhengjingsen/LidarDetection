@@ -118,7 +118,7 @@ class ProposalTargetLayer(nn.Module):
             if assign_tracking_target:
                 locations = batch_dict['locations'][index][:k + 1]
                 rotations_y = batch_dict['rotations_y'][index][:k + 1]
-                cur_gt = torch.cat([cur_gt, locations[:, 1, :] - locations[:, 0, :], locations[:, 2, :] - locations[:, 1, :], rotations_y[:, [0, 1]]], dim=-1)
+                cur_gt = torch.cat([cur_gt, locations[:, 0, :], locations[:, 2, :], rotations_y[:, [0, 2]]], dim=-1)
             cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
             batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 

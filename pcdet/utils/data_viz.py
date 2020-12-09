@@ -62,7 +62,7 @@ def plot_multiframe_boxes(points, boxes, bev_range,
     else:
         canvas[loc_x, loc_y] = [0, 255, 255]
 
-    def plot_boxes(boxes, color, scores, labels):
+    def plot_boxes(boxes, color, scores, labels, thickness=1):
         assert boxes.shape[1] == len(color)
         for idx in range(boxes.shape[1]):
             cur_color = color[idx]
@@ -72,32 +72,32 @@ def plot_multiframe_boxes(points, boxes, bev_range,
                 box2d[:, 1] = bev_range[4] - box2d[:, 1]
                 # Plot box
                 cv2.line(canvas, (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)),
-                         (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)), cur_color, 1)
+                         (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)), cur_color, thickness)
                 cv2.line(canvas, (int(box2d[1, 1] / resolution), int(box2d[1, 0] / resolution)),
-                         (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)), cur_color, 1)
+                         (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)), cur_color, thickness)
                 cv2.line(canvas, (int(box2d[2, 1] / resolution), int(box2d[2, 0] / resolution)),
-                         (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)), cur_color, 1)
+                         (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)), cur_color, thickness)
                 cv2.line(canvas, (int(box2d[3, 1] / resolution), int(box2d[3, 0] / resolution)),
-                         (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)), cur_color, 1)
+                         (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)), cur_color, thickness)
                 # Plot heading
                 heading_points = rot_line_90(box2d[0], box2d[1])
                 cv2.line(canvas, (int(heading_points[0, 1] / resolution), int(heading_points[0, 0] / resolution)),
-                         (int(heading_points[1, 1] / resolution), int(heading_points[1, 0] / resolution)), cur_color, 2)
+                         (int(heading_points[1, 1] / resolution), int(heading_points[1, 0] / resolution)), cur_color, thickness)
                 if scores is not None and labels is not None and idx == stack_frame_size // 2:
                     cv2.putText(canvas, str(scores[i]) + ', ' + str(labels[i]),
                                 (int(box2d[0, 1] / resolution), int(box2d[0, 0] / resolution)),
                                 fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                                 fontScale=0.5, color=cur_color, thickness=2)
 
-    # Plot the gt boxes
-    gt_colors = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
-    if gt_boxes is not None:
-        plot_boxes(gt_boxes, gt_colors, None, None)
-
     # Plot the detect boxes
     if boxes is not None:
         dt_colors = [[255, 100, 100], [100, 255, 100], [100, 100, 255]]
-        plot_boxes(boxes, dt_colors, scores, labels)
+        plot_boxes(boxes, dt_colors, scores, labels, 1)
+
+    # Plot the gt boxes
+    gt_colors = [[128, 0, 0], [0, 128, 0], [0, 0, 128]]
+    if gt_boxes is not None:
+        plot_boxes(gt_boxes, gt_colors, None, None, 1)
 
     if info is not None:
         cv2.putText(canvas, info, (10, 35), fontFace=cv2.FONT_HERSHEY_SIMPLEX,

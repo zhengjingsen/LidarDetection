@@ -218,10 +218,14 @@ def inference_with_info():
                     total_dist_err[iou_idx, dist_range_idx] += dist_err
                 info += 'tp: {}, dt: {}, gt: {}\n'.format(tp, num_valid_det, num_valid_gt)
 
-            det_boxes = det_boxes[:, np.newaxis, :].repeat(3, axis=1)
+            det_multi_boxes = det_boxes[:, np.newaxis, 0:7].repeat(3, axis=1)
+            det_multi_boxes[:, 0, 0:3] = det_boxes[:, 7:10]
+            det_multi_boxes[:, 0, -1] = det_boxes[:, 13]
+            det_multi_boxes[:, 2, 0:3] = det_boxes[:, 10:13]
+            det_multi_boxes[:, 2, -1] = det_boxes[:, 14]
             gt_boxes = gt_boxes[:, np.newaxis, :].repeat(3, axis=1)
             image = plot_multiframe_boxes(data_dict['points'][:, 1:].cpu().numpy(),
-                                          det_boxes, cfg.DATA_CONFIG.POINT_CLOUD_RANGE, gt_boxes=gt_boxes,
+                                          det_multi_boxes, cfg.DATA_CONFIG.POINT_CLOUD_RANGE, gt_boxes=gt_boxes,
                                           scores=scores, labels=labels)
             info = info.split("\n")
             fontScale = 0.6
