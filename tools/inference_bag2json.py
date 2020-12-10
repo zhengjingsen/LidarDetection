@@ -59,7 +59,7 @@ def main():
     if args.save_video:
         fourcc = cv2.VideoWriter_fourcc(*'XVID') # MJPG XVID DIVX
         video_file_name = os.path.join(args.save_path, 'inf_result_{}.avi'.format(args.bag_file.split('/')[-1][:-4]))
-        video_output = cv2.VideoWriter(video_file_name, fourcc, 10.0, (int((bev_range[4] - bev_range[1]) / image_resolution),
+        video_output = cv2.VideoWriter(video_file_name, fourcc, 10.0, (int((bev_range[4] - bev_range[1]) / image_resolution) * 2,
                                                                        int((bev_range[3] - bev_range[0]) / image_resolution)))
     else:
         image_save_path = os.path.join(args.save_path, 'inf_result_{}'.format(args.bag_file.split('/')[-1]))
@@ -87,10 +87,6 @@ def main():
             print("Predicting message %0.3f %04d" % (timestamp, frame_idx))
             pred_dicts, _ = model(batch_dict)
 
-            # Update the tracking manager
-            tracked_objects = tracking_manager.update_tracking(pred_dicts)
-
-            # det_boxes = tracked_objects['pred_boxes']
             det_boxes = pred_dicts[0]['pred_boxes'].cpu().detach().numpy()
             scores = pred_dicts[0]['pred_scores'].cpu().numpy()
             labels = pred_dicts[0]['pred_labels'].cpu().numpy()
@@ -98,19 +94,35 @@ def main():
             points = data_dict['points']
             if mode == 'multi' and det_boxes.size > 0:
                 det_boxes = det_boxes[:, np.newaxis, :].repeat(3, axis=1)
-                frame = plot_multiframe_boxes(points, det_boxes, bev_range,
+                det_frame = plot_multiframe_boxes(points, det_boxes, bev_range,
                                               scores=scores, labels=labels,
-                                              info='ts: {:.3f}'.format(timestamp))
+                                              info='detect ts: {:.3f}'.format(timestamp))
             else:
-                frame = plot_gt_boxes(points, det_boxes, bev_range, ret=True)
+                det_frame = plot_gt_boxes(points, det_boxes, bev_range, ret=True)
 
+            # Update the tracking manager
+            tracked_objects = tracking_manager.update_tracking(pred_dicts)
+            det_boxes = tracked_objects['pred_boxes']
+            if mode == 'multi' and det_boxes.size > 0:
+                det_boxes = det_boxes[:, np.newaxis, :].repeat(3, axis=1)
+                track_frame = plot_multiframe_boxes(points, det_boxes, bev_range,
+                                              scores=[cfg.CLASS_NAMES[obj_type-1] for obj_type in tracked_objects['object_types']],
+                                              labels=tracked_objects['object_ids'],
+                                              info='track ts: {:.3f}'.format(timestamp))
+            else:
+                track_frame = plot_gt_boxes(points, det_boxes, bev_range, ret=True)
+
+            frame = cv2.hconcat([det_frame, track_frame])
+            img_file_name = '{:0>4d}.png'.format(frame_idx)
+            cv2.putText(frame, img_file_name, (30, 60), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.6, color=(0, 255, 0), thickness=1)
             cv2.imshow('debug', frame)
             cv2.waitKey(1)
             # Save video
             if args.save_video:
                 video_output.write(frame)
             else:
-                cv2.imwrite(os.path.join(image_save_path, '{:0>4d}.png'.format(frame_idx)), frame)
+                cv2.imwrite(os.path.join(image_save_path, img_file_name), frame)
 
             # Format the det result
             for obj_idx in range(tracked_objects['pred_boxes'].shape[0]):

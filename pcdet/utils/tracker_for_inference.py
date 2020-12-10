@@ -1,9 +1,9 @@
 import math
 import copy
-
+import torch
 import numpy as np
 from pykalman import KalmanFilter
-
+from pcdet.utils.box_utils import boxes3d_nearest_bev_iou
 
 class DetectedObject(object):
     def __init__(self, pred_box, name, score):
@@ -136,7 +136,7 @@ class TrackingManager(object):
         self.lose_tracking_thres = 3
         self.age_thres_of_object = 3
         self.age_thres_for_prediction = 2
-        self.side_range_limit = 8
+        self.side_range_limit = 16
         self.filter_missdetection_thres = 2
 
     def create_det_object_list(self, pred_dicts):
@@ -146,36 +146,39 @@ class TrackingManager(object):
         num_det_objects = det_boxes.shape[0]
 
         self.detected_object_list = []
+        self.detected_object_boxes = []
         for det_object_idx in range(num_det_objects):
             if det_boxes[det_object_idx, 1] > self.side_range_limit or \
                     det_boxes[det_object_idx, 1] < -self.side_range_limit:
                 continue
             det_object = DetectedObject(det_boxes[det_object_idx, :], det_labels[det_object_idx],
                                         det_scores[det_object_idx])
+            self.detected_object_boxes.append(det_boxes[det_object_idx, :])
             self.detected_object_list.append(det_object)
+        self.detected_object_boxes = np.array(self.detected_object_boxes, dtype=np.float32)
 
     def get_tracked_object_boxes(self):
         if not len(self.tracker_list):
-            return np.array([[0, 0, 0, 0, 0, 0, 0]])  # DEBUG
+            return np.array([[0, 0, 0, 0, 0, 0, 0]], dtype=np.float32)  # DEBUG
 
         tracked_boxes = []
         for tracked_object in self.tracker_list:
-            if tracked_object.age < self.age_thres_of_object:
-                continue
+            # if tracked_object.age < self.age_thres_of_object:
+            #     continue
             obj_loc = tracked_object.loc
             obj_dims = tracked_object.dims
             obj_rotz = tracked_object.rotz
             tracked_box = np.concatenate((obj_loc, obj_dims, obj_rotz[..., np.newaxis]))
             tracked_boxes.append(tracked_box)
 
-        return np.array(tracked_boxes)
+        return np.array(tracked_boxes, dtype=np.float32)
 
     def get_tracked_objects(self):
         info_tracked_objects = {'object_ids': [], 'object_types': [], 'pred_boxes': []}
 
         for tracked_object in self.tracker_list:
-            if tracked_object.age < self.age_thres_of_object:
-                continue
+            # if tracked_object.age < self.age_thres_of_object:
+            #     continue
             obj_loc = tracked_object.loc
             obj_dims = tracked_object.dims
             obj_rotz = tracked_object.rotz
@@ -203,25 +206,54 @@ class TrackingManager(object):
             return self.get_tracked_objects()
 
         # Update the tracked objects with detection results
-        for tracked_object in self.tracker_list:
+        # for tracked_object in self.tracker_list:
+        #     tracked_object.updated = False
+        #     min_dist_lateral = 10
+        #     closest_det_object = None
+        #
+        #     for det_object in self.detected_object_list[:]:
+        #         objects_dist_lateral = abs(tracked_object.loc[1] - det_object.loc[1])
+        #         if objects_dist_lateral < min_dist_lateral:
+        #             min_dist_lateral = objects_dist_lateral
+        #             closest_det_object = det_object
+        #
+        #     # Can't find a close object
+        #     if not closest_det_object:
+        #         continue
+        #
+        #     closest_objects_dist_longitudinal = abs(tracked_object.loc[0] - closest_det_object.loc[0])
+        #     if closest_objects_dist_longitudinal <= self.dist_thres_longitudinal:
+        #         tracked_object.update(closest_det_object)
+        #         self.detected_object_list.remove(closest_det_object)
+
+        bev_iou = boxes3d_nearest_bev_iou(torch.from_numpy(self.get_tracked_object_boxes()[:, 0:7]),
+                                          torch.from_numpy(self.detected_object_boxes[:, 0:7])).numpy()
+        # sorted_bev_iou = np.sort(bev_iou, axis=-1)
+        sort_indices = bev_iou.argsort(axis=-1)
+        associated_flag = [False for _ in self.detected_object_list]
+        for idx in range(len(self.tracker_list)):
+            tracked_object = self.tracker_list[idx]
             tracked_object.updated = False
-            min_dist_lateral = 10
-            closest_det_object = None
-
-            for det_object in self.detected_object_list[:]:
-                objects_dist_lateral = abs(tracked_object.loc[1] - det_object.loc[1])
-                if objects_dist_lateral < min_dist_lateral:
-                    min_dist_lateral = objects_dist_lateral
-                    closest_det_object = det_object
-
-            # Can't find a close object
-            if not closest_det_object:
+            max_iou_index = sort_indices[idx, -1]
+            max_iou = bev_iou[idx, max_iou_index]
+            max_iou_detection = self.detected_object_list[max_iou_index]
+            second_max_iou_index = sort_indices[idx, -2]
+            second_max_iou = bev_iou[idx, second_max_iou_index]
+            second_max_iou_detection = self.detected_object_list[second_max_iou_index]
+            if max_iou < 0.1:
                 continue
-
-            closest_objects_dist_longitudinal = abs(tracked_object.loc[0] - closest_det_object.loc[0])
-            if closest_objects_dist_longitudinal <= self.dist_thres_longitudinal:
+            elif max_iou > second_max_iou * 2:
+                tracked_object.update(max_iou_detection)
+                associated_flag[max_iou_index] = True
+            else:
+                if abs(max_iou_detection.loc[1] - tracked_object.loc[1]) <= abs(second_max_iou_detection.loc[1] - tracked_object.loc[1]):
+                    closest_det_object = max_iou_detection
+                    closest_det_index = max_iou_index
+                else:
+                    closest_det_object = second_max_iou_detection
+                    closest_det_index = second_max_iou_index
                 tracked_object.update(closest_det_object)
-                self.detected_object_list.remove(closest_det_object)
+                associated_flag[closest_det_index] = True
 
         # Update the not updated tracked objects with prediction
         for tracked_object in self.tracker_list:
@@ -232,7 +264,9 @@ class TrackingManager(object):
             tracked_object.lose_tracking += 1
 
         # Create new trackers for not correlated detected objects
-        for det_object in self.detected_object_list:
+        for idx, det_object in enumerate(self.detected_object_list):
+            if associated_flag[idx]:
+                continue
             if det_object.score >= self.start_tracking_score_thres:
                 new_tracker = ObjectTracker(det_object, self.track_id)
                 self.tracker_list.append(new_tracker)
@@ -240,7 +274,10 @@ class TrackingManager(object):
 
         # Remove untracked objects
         for tracked_object in self.tracker_list:
-            if tracked_object.updated or tracked_object.new_object:
+            if tracked_object.updated:
+                continue
+            if  tracked_object.new_object:
+                tracked_object.new_object = False
                 continue
             if tracked_object.lose_tracking >= self.lose_tracking_thres or \
                     tracked_object.age - tracked_object.lose_tracking <= self.filter_missdetection_thres:
