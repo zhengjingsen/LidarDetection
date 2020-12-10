@@ -39,7 +39,28 @@ class DataAugmentor(object):
 
     def __setstate__(self, d):
         self.__dict__.update(d)
-   
+
+    def random_gt_rotation(self, data_dict=None, config=None):
+        if data_dict is None:
+            return partial(self.random_gt_rotation, config=config)
+        gt_boxes, points = data_dict['gt_boxes'], data_dict['points']
+        rot_range = config['GT_ROT_ANGLE']
+        if not isinstance(rot_range, list):
+            rot_range = [-rot_range, rot_range]
+        if 'locations' in data_dict and 'rotations_y' in data_dict:
+            locations, rotations_y = data_dict['locations'], data_dict['rotations_y']
+            gt_boxes, points, locations, rotations_y = augmentor_utils.gt_rotation(
+                gt_boxes, points, rot_range=rot_range, locations=locations, rotations_y=rotations_y)
+
+            data_dict['locations'] = locations
+            data_dict['rotations_y'] = rotations_y
+        else:
+            gt_boxes, points = augmentor_utils.gt_rotation(gt_boxes, points, rot_range=rot_range)
+
+        data_dict['gt_boxes'] = gt_boxes
+        data_dict['points'] = points
+        return data_dict
+
     def random_world_flip(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.random_world_flip, config=config)

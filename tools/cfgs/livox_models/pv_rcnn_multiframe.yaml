@@ -6,12 +6,15 @@ DATA_CONFIG:
     DATA_AUGMENTOR:
         DISABLE_AUG_LIST: ['placeholder']
         AUG_CONFIG_LIST:
+            - NAME: random_gt_rotation
+              GT_ROT_ANGLE: [-0.087, 0.087]
+
             - NAME: gt_sampling
               USE_ROAD_PLANE: False
               DB_INFO_PATH:
                   - plusai_dbinfos_train.pkl
               PREPARE: {
-                 filter_by_min_points: ['Car:1', 'Truck:1'],
+                 filter_by_min_points: ['Car:0', 'Truck:0'],
                  filter_by_difficulty: [-1],
               }
 
@@ -27,7 +30,7 @@ DATA_CONFIG:
               ALONG_AXIS_LIST: ['x']
 
             - NAME: random_world_rotation
-              WORLD_ROT_ANGLE: [-0.02, 0.02]
+              WORLD_ROT_ANGLE: [-0.051, 0.051]
 
             - NAME: random_world_scaling
               WORLD_SCALE_RANGE: [0.95, 1.05]
@@ -68,8 +71,8 @@ MODEL:
         ANCHOR_GENERATOR_CONFIG: [
             {
                 'class_name': 'Car',
-                'anchor_sizes': [[4.74, 1.88, 2.64]],
-                'anchor_rotations': [0, 1.57],
+                'anchor_sizes': [[7.52, 1.88, 2.64], [10.30, 1.88, 2.64]],
+                'anchor_rotations': [0],
                 'anchor_bottom_heights': [-0.66],
                 'align_center': False,
                 'feature_map_stride': 8,
@@ -78,8 +81,8 @@ MODEL:
             },
             {
                 'class_name': 'Truck',
-                'anchor_sizes': [[10.70, 2.75, 4.24], [ 6.53, 2.62, 4.62 ]],
-                'anchor_rotations': [0, 1.57],
+                'anchor_sizes': [[16.26, 2.75, 4.24], [13.48, 2.75, 4.24], [9.31, 2.62, 4.62 ], [6.53, 2.62, 4.62]],
+                'anchor_rotations': [0],
                 'anchor_bottom_heights': [-0.48],
                 'align_center': False,
                 'feature_map_stride': 8,

@@ -1,9 +1,11 @@
+import torch
 import numpy as np
 
 from ...utils import common_utils
+from ...ops.roiaware_pool3d import roiaware_pool3d_utils
 
 
-def random_flip_along_x(gt_boxes, points, locations = None, rotations_y=None):
+def random_flip_along_x(gt_boxes, points, locations=None, rotations_y=None):
     """
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
@@ -30,7 +32,7 @@ def random_flip_along_x(gt_boxes, points, locations = None, rotations_y=None):
     return gt_boxes, points
 
 
-def random_flip_along_y(gt_boxes, points, locations = None, rotations_y=None):
+def random_flip_along_y(gt_boxes, points, locations=None, rotations_y=None):
     """
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
@@ -57,7 +59,56 @@ def random_flip_along_y(gt_boxes, points, locations = None, rotations_y=None):
     return gt_boxes, points
 
 
-def global_rotation(gt_boxes, points, rot_range, locations = None, rotations_y=None):
+def gt_rotation(gt_boxes, points, rot_range, locations=None, rotations_y=None):
+    """
+    Args:
+        gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
+        points: (M, 3 + C),
+        rot_range: [min, max]
+        locations: (N, S, 3)    S means stack frame size in multi-frame mode
+        rotations_y: (N, S)
+    Returns:
+    """
+    num_obj = gt_boxes.shape[0]
+    num_point_feature = points.shape[1]
+    noise_rotation = np.random.uniform(rot_range[0], rot_range[1],
+                                       gt_boxes.shape[0])
+
+    cur_gt_boxes = gt_boxes.copy()
+    point_indices = np.zeros([num_obj, points.shape[0]], dtype=np.int32)
+    if locations is not None and rotations_y is not None:
+        stack_frame_size = locations.shape[1]
+        for i in range(stack_frame_size):
+            cur_gt_boxes[:, 0:3] = locations[:, i, :]
+            cur_gt_boxes[:, 6] = rotations_y[:, i]
+            point_indices += roiaware_pool3d_utils.points_in_boxes_cpu(
+                torch.from_numpy(points[:, 0:3]), torch.from_numpy(cur_gt_boxes)).numpy()  # (nboxes, npoints)
+    else:
+        point_indices = roiaware_pool3d_utils.points_in_boxes_cpu(
+            torch.from_numpy(points[:, 0:3]), torch.from_numpy(cur_gt_boxes)).numpy()  # (nboxes, npoints)
+
+    for i in range(num_obj):
+        if gt_boxes[i, 0] < 40.0:
+            continue
+        cur_fg_indices = point_indices[i] > 0
+        cur_gt_point = points[cur_fg_indices]
+        cur_gt_point[:, 0:3] -= gt_boxes[i, 0:3]
+        cur_gt_point = common_utils.rotate_points_along_z(cur_gt_point[np.newaxis, :, :], np.array([noise_rotation[i]])).reshape(-1, num_point_feature)
+        cur_gt_point[:, 0:3] += gt_boxes[i, 0:3]
+        points[cur_fg_indices] = cur_gt_point
+
+        gt_boxes[i, 6] += noise_rotation[i]
+        if locations is not None and rotations_y is not None:
+            rotations_y[i, :] += noise_rotation[i]
+            locations[[i], ...] = common_utils.rotate_points_along_z(locations[[i], ...] - gt_boxes[i, 0:3], np.array([noise_rotation[i]])) + gt_boxes[i, 0:3]
+
+    if locations is not None and rotations_y is not None:
+        return gt_boxes, points, locations, rotations_y
+    else:
+        return gt_boxes, points
+
+
+def global_rotation(gt_boxes, points, rot_range, locations=None, rotations_y=None):
     """
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
@@ -86,7 +137,7 @@ def global_rotation(gt_boxes, points, rot_range, locations = None, rotations_y=N
     return gt_boxes, points
 
 
-def global_scaling(gt_boxes, points, scale_range, locations = None, rotations_y=None):
+def global_scaling(gt_boxes, points, scale_range, locations=None, rotations_y=None):
     """
     Args:
         gt_boxes: (N, 7), [x, y, z, dx, dy, dz, heading]
