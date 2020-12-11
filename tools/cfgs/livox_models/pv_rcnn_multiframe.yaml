@@ -6,8 +6,8 @@ DATA_CONFIG:
     DATA_AUGMENTOR:
         DISABLE_AUG_LIST: ['placeholder']
         AUG_CONFIG_LIST:
-            - NAME: random_gt_rotation
-              GT_ROT_ANGLE: [-0.087, 0.087]
+            # - NAME: random_gt_rotation
+            #   GT_ROT_ANGLE: [-0.087, 0.087]
 
             - NAME: gt_sampling
               USE_ROAD_PLANE: False
@@ -81,7 +81,7 @@ MODEL:
             },
             {
                 'class_name': 'Truck',
-                'anchor_sizes': [[16.26, 2.75, 4.24], [13.48, 2.75, 4.24], [9.31, 2.62, 4.62 ], [6.53, 2.62, 4.62]],
+                'anchor_sizes': [[16.26, 2.75, 4.24], [13.48, 2.75, 4.24]],
                 'anchor_rotations': [0],
                 'anchor_bottom_heights': [-0.48],
                 'align_center': False,

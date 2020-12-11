@@ -33,7 +33,7 @@ class AxisAlignedTargetAssigner(object):
                 for idx, name in enumerate(rpn_head_cfg['HEAD_CLS_NAME']):
                     self.gt_remapping[name] = idx + 1
 
-    def assign_targets(self, all_anchors, gt_boxes_with_classes, gt_boxes_enlarged=None):
+    def assign_targets(self, all_anchors, gt_boxes_with_classes):
         """
         Args:
             all_anchors: [(N, 7), ...]
@@ -82,7 +82,6 @@ class AxisAlignedTargetAssigner(object):
                 single_target = self.assign_targets_single(
                     anchors,
                     cur_gt[mask],
-                    gt_boxes_enlarged=gt_boxes_enlarged[:, :, :-1][k][:cnt + 1][mask] if gt_boxes_enlarged is not None else None,
                     gt_classes=selected_classes,
                     matched_threshold=self.matched_thresholds[anchor_class_name],
                     unmatched_threshold=self.unmatched_thresholds[anchor_class_name]
@@ -132,7 +131,6 @@ class AxisAlignedTargetAssigner(object):
     def assign_targets_single(self, anchors,
                          gt_boxes,
                          gt_classes,
-                         gt_boxes_enlarged=None,
                          matched_threshold=0.6,
                          unmatched_threshold=0.45
                         ):
@@ -194,10 +192,7 @@ class AxisAlignedTargetAssigner(object):
 
         bbox_targets = anchors.new_zeros((num_anchors, self.box_coder.code_size))
         if len(gt_boxes) > 0 and anchors.shape[0] > 0:
-            if gt_boxes_enlarged is not None:
-                fg_gt_boxes = gt_boxes_enlarged[anchor_to_gt_argmax[fg_inds], :]
-            else:
-                fg_gt_boxes = gt_boxes[anchor_to_gt_argmax[fg_inds], :]
+            fg_gt_boxes = gt_boxes[anchor_to_gt_argmax[fg_inds], :]
             fg_anchors = anchors[fg_inds, :]
             bbox_targets[fg_inds, :] = self.box_coder.encode_torch(fg_gt_boxes, fg_anchors)
 

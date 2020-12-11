@@ -59,13 +59,12 @@ class AnchorHeadSingle(AnchorHeadTemplate):
             dir_cls_preds = None
 
         if self.training:
-            gt_boxes_enlarged = None
+            gt_boxes = data_dict['gt_boxes']
             if self.model_cfg.get('USE_MULTIFRAME_ENLARGED_GT_BOXES', False):
                 from pcdet.utils.box_utils import boxes_to_corners_3d
                 from pcdet.utils.common_utils import rotate_points_along_z
 
                 batch_size, num_boxes, boxes_dim = data_dict['gt_boxes'].shape
-                gt_boxes_enlarged = data_dict['gt_boxes'].clone()
                 if num_boxes > 0:
                     stack_frame_size = data_dict['locations'].shape[2]
                     gt_boxes_corner = []
@@ -85,11 +84,11 @@ class AnchorHeadSingle(AnchorHeadTemplate):
                     gt_boxes_enlarged = torch.cat(
                         [gt_boxes[:, 0:3], multi_length[:, None], multi_width[:, None], gt_boxes[:, 5:]],
                         dim=-1)
-                    gt_boxes_enlarged = gt_boxes_enlarged.view(batch_size, num_boxes, boxes_dim)
-                data_dict['gt_boxes_enlarged'] = gt_boxes_enlarged
+                    gt_boxes = gt_boxes_enlarged.view(batch_size, num_boxes, boxes_dim)
+                data_dict['gt_boxes_enlarged'] = gt_boxes
 
             targets_dict = self.assign_targets(
-                gt_boxes=data_dict['gt_boxes'], gt_boxes_enlarged=gt_boxes_enlarged
+                gt_boxes=gt_boxes
             )
             self.forward_ret_dict.update(targets_dict)
 
