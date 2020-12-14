@@ -132,7 +132,7 @@ class TrackingManager(object):
 
         self.dist_thres_longitudinal = 5
         self.dist_thres_lateral = 0.8
-        self.start_tracking_score_thres = 0.5
+        self.start_tracking_score_thres = 0.3
         self.lose_tracking_thres = 3
         self.age_thres_of_object = 3
         self.age_thres_for_prediction = 2
@@ -237,7 +237,7 @@ class TrackingManager(object):
             max_iou_index = sort_indices[idx, -1]
             max_iou = bev_iou[idx, max_iou_index]
             max_iou_detection = self.detected_object_list[max_iou_index]
-            second_max_iou_index = sort_indices[idx, -2]
+            second_max_iou_index = sort_indices[idx, -2] if sort_indices.shape[1] > 1 else max_iou_index
             second_max_iou = bev_iou[idx, second_max_iou_index]
             second_max_iou_detection = self.detected_object_list[second_max_iou_index]
             if max_iou < 0.1:
