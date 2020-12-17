@@ -5,6 +5,70 @@ from torch.autograd import Function, Variable
 from . import pointnet2_stack_cuda as pointnet2
 
 
+def calc_square_dist(point_feat_a, point_feat_b, norm=True):
+    """Calculating square distance between a and b.
+
+    Args:
+        point_feat_a (Tensor): (B, N, C) Feature vector of each point.
+        point_feat_b (Tensor): (B, M, C) Feature vector of each point.
+        norm (Bool): Whether to normalize the distance.
+            Default: True.
+
+    Returns:
+        Tensor: (B, N, M) Distance between each pair points.
+    """
+    length_a = point_feat_a.shape[1]
+    length_b = point_feat_b.shape[1]
+    num_channel = point_feat_a.shape[-1]
+    # [bs, n, 1]
+    a_square = torch.sum(point_feat_a.unsqueeze(dim=2).pow(2), dim=-1)
+    # [bs, 1, m]
+    b_square = torch.sum(point_feat_b.unsqueeze(dim=1).pow(2), dim=-1)
+    a_square = a_square.repeat((1, 1, length_b))  # [bs, n, m]
+    b_square = b_square.repeat((1, length_a, 1))  # [bs, n, m]
+
+    coor = torch.matmul(point_feat_a, point_feat_b.transpose(1, 2))
+
+    dist = a_square + b_square - 2 * coor
+    if norm:
+        dist = torch.sqrt(dist) / num_channel
+    return dist
+
+
+def bilinear_interpolate_torch(im, x, y):
+    """
+    Args:
+        im: (H, W, C) [y, x]
+        x: (N)
+        y: (N)
+
+    Returns:
+
+    """
+    x0 = torch.floor(x).long()
+    x1 = x0 + 1
+
+    y0 = torch.floor(y).long()
+    y1 = y0 + 1
+
+    x0 = torch.clamp(x0, 0, im.shape[1] - 1)
+    x1 = torch.clamp(x1, 0, im.shape[1] - 1)
+    y0 = torch.clamp(y0, 0, im.shape[0] - 1)
+    y1 = torch.clamp(y1, 0, im.shape[0] - 1)
+
+    Ia = im[y0, x0]
+    Ib = im[y1, x0]
+    Ic = im[y0, x1]
+    Id = im[y1, x1]
+
+    wa = (x1.type_as(x) - x) * (y1.type_as(y) - y)
+    wb = (x1.type_as(x) - x) * (y - y0.type_as(y))
+    wc = (x - x0.type_as(x)) * (y1.type_as(y) - y)
+    wd = (x - x0.type_as(x)) * (y - y0.type_as(y))
+    ans = torch.t((torch.t(Ia) * wa)) + torch.t(torch.t(Ib) * wb) + torch.t(torch.t(Ic) * wc) + torch.t(torch.t(Id) * wd)
+    return ans
+
+
 class BallQuery(Function):
 
     @staticmethod
@@ -181,7 +245,70 @@ class FurthestPointSampling(Function):
         return None, None
 
 
+class FeatureFurthestPointSampling(Function):
+    @staticmethod
+    def forward(ctx, point_features: torch.Tensor, npoint: int):
+        """
+        Args:
+            ctx:
+            xyz: (B, N, c) where N > npoint
+            npoint: int, number of features in the sampled set
+
+        Returns:
+            output: (B, npoint) tensor containing the set
+        """
+        assert point_features.is_contiguous()
+
+        B, N, C = point_features.size()
+        output = torch.cuda.IntTensor(B, npoint)
+        temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
+
+        pointnet2.feature_furthest_point_sampling_wrapper(B, N, npoint, C, point_features, temp, output)
+        return output
+
+    @staticmethod
+    def backward(xyz, a=None):
+        return None, None
+
+
+class FurthestPointSamplingWithDist(Function):
+    """Furthest Point Sampling With Distance.
+
+    Uses iterative furthest point sampling to select a set of features whose
+    corresponding points have the furthest distance.
+    """
+
+    @staticmethod
+    def forward(ctx, points_dist: torch.Tensor,
+                num_points: int) -> torch.Tensor:
+        """forward.
+
+        Args:
+            points_dist (Tensor): (B, N, N) Distance between each point pair.
+            num_points (int): Number of points in the sampled set.
+
+        Returns:
+             Tensor: (B, num_points) indices of the sampled points.
+        """
+        assert points_dist.is_contiguous()
+
+        B, N, _ = points_dist.size()
+        output = points_dist.new_zeros([B, num_points], dtype=torch.int32)
+        temp = points_dist.new_zeros([B, N]).fill_(1e10)
+
+        pointnet2.furthest_point_sampling_with_dist_wrapper(
+            B, N, num_points, points_dist, temp, output)
+        ctx.mark_non_differentiable(output)
+        return output
+
+    @staticmethod
+    def backward(xyz, a=None):
+        return None, None
+
+
 furthest_point_sample = FurthestPointSampling.apply
+furthest_point_sample_with_dist = FurthestPointSamplingWithDist.apply
+feature_furthest_point_sample = FeatureFurthestPointSampling.apply
 
 
 class ThreeNN(Function):

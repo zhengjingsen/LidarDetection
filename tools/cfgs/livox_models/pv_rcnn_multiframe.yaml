@@ -119,8 +119,8 @@ MODEL:
 
     PFE:
         NAME: VoxelSetAbstraction
-        POINT_SOURCE: raw_points
-        NUM_KEYPOINTS: 4086
+        POINT_SOURCE: voxel_centers
+        NUM_KEYPOINTS: 1024
         NUM_OUTPUT_FEATURES: 128
         SAMPLE_METHOD: FPS
 
