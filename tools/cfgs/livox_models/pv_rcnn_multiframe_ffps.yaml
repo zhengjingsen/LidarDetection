@@ -118,13 +118,13 @@ MODEL:
             }
 
     PFE:
-        NAME: VoxelSetAbstraction
+        NAME: VoxelSetAbstractionFFps
         POINT_SOURCE: raw_points
-        NUM_KEYPOINTS: 4086
         NUM_OUTPUT_FEATURES: 128
         SAMPLE_METHOD: FPS
 
-        FEATURES_SOURCE: ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'raw_points']
+        NUM_KEYPOINTS: [4096, 1024, 512]
+        FEATURES_SOURCE: [['raw_points'], ['x_conv1', 'x_conv2'], ['x_conv3', 'x_conv4', 'bev']]
         SA_LAYER:
             raw_points:
                 MLPS: [[16, 16], [16, 16]]

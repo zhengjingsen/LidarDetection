@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 import torch.nn as nn
 
 from ....ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_stack_modules
@@ -117,83 +116,41 @@ class VoxelSetAbstraction(nn.Module):
         point_bev_features = torch.cat(point_bev_features_list, dim=0)  # (B, N, C0)
         return point_bev_features
 
-    # def get_sampled_points(self, batch_dict):
-    #     batch_size = batch_dict['batch_size']
-    #     if self.model_cfg.POINT_SOURCE == 'raw_points':
-    #         src_points = batch_dict['points'][:, 1:4]
-    #         batch_indices = batch_dict['points'][:, 0].long()
-    #     elif self.model_cfg.POINT_SOURCE == 'voxel_centers':
-    #         src_points = common_utils.get_voxel_centers(
-    #             batch_dict['voxel_coords'][:, 1:4],
-    #             downsample_times=1,
-    #             voxel_size=self.voxel_size,
-    #             point_cloud_range=self.point_cloud_range
-    #         )
-    #         batch_indices = batch_dict['voxel_coords'][:, 0].long()
-    #     else:
-    #         raise NotImplementedError
-    #     keypoints_list = []
-    #     for bs_idx in range(batch_size):
-    #         bs_mask = (batch_indices == bs_idx)
-    #         sampled_points = src_points[bs_mask].unsqueeze(dim=0)  # (1, N, 3)
-    #         if self.model_cfg.SAMPLE_METHOD == 'FPS':
-    #             cur_pt_idxs = pointnet2_stack_utils.furthest_point_sample(
-    #                 sampled_points[:, :, 0:3].contiguous(), self.model_cfg.NUM_KEYPOINTS
-    #             ).long()
-    #
-    #             if sampled_points.shape[1] < self.model_cfg.NUM_KEYPOINTS:
-    #                 empty_num = self.model_cfg.NUM_KEYPOINTS - sampled_points.shape[1]
-    #                 cur_pt_idxs[0, -empty_num:] = cur_pt_idxs[0, :empty_num]
-    #
-    #             keypoints = sampled_points[0][cur_pt_idxs[0]].unsqueeze(dim=0)
-    #
-    #         elif self.model_cfg.SAMPLE_METHOD == 'FastFPS':
-    #             raise NotImplementedError
-    #         else:
-    #             # random sample points
-    #             total_num_points = sampled_points.shape[1]
-    #             pt_idxs = np.arange(0, total_num_points-1, 1)
-    #             cur_pt_idxs = np.random.choice(pt_idxs, self.model_cfg.NUM_KEYPOINTS, replace=False)
-    #             cur_pt_idxs = torch.from_numpy(cur_pt_idxs).unsqueeze(0)
-    #
-    #             if sampled_points.shape[1] < self.model_cfg.NUM_KEYPOINTS:
-    #                 empty_num = self.model_cfg.NUM_KEYPOINTS - sampled_points.shape[1]
-    #                 cur_pt_idxs[0, -empty_num:] = cur_pt_idxs[0, :empty_num]
-    #
-    #             keypoints = sampled_points[0][cur_pt_idxs[0]].unsqueeze(dim=0)
-    #
-    #         keypoints_list.append(keypoints)
-    #
-    #     keypoints = torch.cat(keypoints_list, dim=0)  # (B, M, 3)
-    #     return keypoints
-
     def get_sampled_points(self, batch_dict):
         batch_size = batch_dict['batch_size']
-        cur_coords = batch_dict['multi_scale_3d_features']['x_conv4'].indices
-        src_points = common_utils.get_voxel_centers(
-            cur_coords[:, 1:4],
-            downsample_times=self.downsample_times_map['x_conv4'],
-            voxel_size=self.voxel_size,
-            point_cloud_range=self.point_cloud_range
-        )
-        batch_indices = cur_coords[:, 0].long()
-
+        if self.model_cfg.POINT_SOURCE == 'raw_points':
+            src_points = batch_dict['points'][:, 1:4]
+            batch_indices = batch_dict['points'][:, 0].long()
+        elif self.model_cfg.POINT_SOURCE == 'voxel_centers':
+            src_points = common_utils.get_voxel_centers(
+                batch_dict['voxel_coords'][:, 1:4],
+                downsample_times=1,
+                voxel_size=self.voxel_size,
+                point_cloud_range=self.point_cloud_range
+            )
+            batch_indices = batch_dict['voxel_coords'][:, 0].long()
+        else:
+            raise NotImplementedError
         keypoints_list = []
         for bs_idx in range(batch_size):
             bs_mask = (batch_indices == bs_idx)
-            sampled_points = src_points[bs_mask].unsqueeze(dim=0)
-            point_features = batch_dict['multi_scale_3d_features']['x_conv4'].features[bs_mask].unsqueeze(dim=0)
-            # features_for_fps = torch.cat([sampled_points, point_features], dim=2).contiguous()
-            features_for_fps = point_features.contiguous()
-            cur_pt_idxs = pointnet2_stack_utils.feature_furthest_point_sample(
-                features_for_fps, self.model_cfg.NUM_KEYPOINTS
-            ).long()
+            sampled_points = src_points[bs_mask].unsqueeze(dim=0)  # (1, N, 3)
+            if self.model_cfg.SAMPLE_METHOD == 'FPS':
+                cur_pt_idxs = pointnet2_stack_utils.furthest_point_sample(
+                    sampled_points[:, :, 0:3].contiguous(), self.model_cfg.NUM_KEYPOINTS
+                ).long()
 
-            if sampled_points.shape[1] < self.model_cfg.NUM_KEYPOINTS:
-                empty_num = self.model_cfg.NUM_KEYPOINTS - sampled_points.shape[1]
-                cur_pt_idxs[0, -empty_num:] = cur_pt_idxs[0, :empty_num]
+                if sampled_points.shape[1] < self.model_cfg.NUM_KEYPOINTS:
+                    empty_num = self.model_cfg.NUM_KEYPOINTS - sampled_points.shape[1]
+                    cur_pt_idxs[0, -empty_num:] = cur_pt_idxs[0, :empty_num]
 
-            keypoints = sampled_points[0][cur_pt_idxs[0]].unsqueeze(dim=0)
+                keypoints = sampled_points[0][cur_pt_idxs[0]].unsqueeze(dim=0)
+
+            elif self.model_cfg.SAMPLE_METHOD == 'FastFPS':
+                raise NotImplementedError
+            else:
+                raise NotImplementedError
+
             keypoints_list.append(keypoints)
 
         keypoints = torch.cat(keypoints_list, dim=0)  # (B, M, 3)
