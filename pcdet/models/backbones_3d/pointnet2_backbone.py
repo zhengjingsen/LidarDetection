@@ -1,9 +1,178 @@
 import torch
 import torch.nn as nn
+from mmcv.cnn import ConvModule
 
 from ...ops.pointnet2.pointnet2_batch import pointnet2_modules
 from ...ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_modules_stack
 from ...ops.pointnet2.pointnet2_stack import pointnet2_utils as pointnet2_utils_stack
+
+class PointNet2SAMSG(nn.Module):
+    """PointNet2 with Multi-scale grouping.
+
+    Args:
+        input_channels (int): Input channels of point cloud.
+        num_points (tuple[int]): The number of points which each SA
+            module samples.
+        radii (tuple[float]): Sampling radii of each SA module.
+        num_samples (tuple[int]): The number of samples for ball
+            query in each SA module.
+        sa_channels (tuple[tuple[int]]): Out channels of each mlp in SA module.
+        aggregation_channels (tuple[int]): Out channels of aggregation
+            multi-scale grouping features.
+        fps_mods (tuple[int]): Mod of FPS for each SA module.
+        fps_sample_range_lists (tuple[tuple[int]]): The number of sampling
+            points which each SA module samples.
+        dilated_group (tuple[bool]): Whether to use dilated ball query for
+        out_indices (Sequence[int]): Output from which stages.
+        norm_cfg (dict): Config of normalization layer.
+        sa_cfg (dict): Config of set abstraction module, which may contain
+            the following keys and values:
+
+            - pool_mod (str): Pool method ('max' or 'avg') for SA modules.
+            - use_xyz (bool): Whether to use xyz as a part of features.
+            - normalize_xyz (bool): Whether to normalize xyz with radii in
+              each SA module.
+    """
+
+    def __init__(self, model_cfg, input_channels, **kwargs):
+        # in_channels,
+        # num_points = (2048, 1024, 512, 256),
+        # radii = ((0.2, 0.4, 0.8), (0.4, 0.8, 1.6), (1.6, 3.2, 4.8)),
+        # num_samples = ((32, 32, 64), (32, 32, 64), (32, 32, 32)),
+        # sa_channels = (((16, 16, 32), (16, 16, 32), (32, 32, 64)),
+        #                ((64, 64, 128), (64, 64, 128), (64, 96, 128)),
+        #                ((128, 128, 256), (128, 192, 256), (128, 256,
+        #                                                    256))),
+        # aggregation_channels = (64, 128, 256),
+        # fps_mods = (('D-FPS'), ('FS'), ('F-FPS', 'D-FPS')),
+        # fps_sample_range_lists = ((-1), (-1), (512, -1)),
+        # dilated_group = (True, True, True),
+        # out_indices = (2,),
+        # norm_cfg = dict(type='BN2d'),
+        # sa_cfg = dict(
+        #     type='PointSAModuleMSG',
+        #     pool_mod='max',
+        #     use_xyz=True,
+        #     normalize_xyz=False)
+
+        super().__init__()
+        self.model_cfg = model_cfg
+        self.num_sa = len(model_cfg.SA_CHANNELS)
+        self.out_indices = model_cfg.OUT_INDICES
+        assert max(self.out_indices) < self.num_sa
+        assert len(model_cfg.NUM_POINTS) == len(model_cfg.RADII) == len(model_cfg.NUM_SAMPLES) == len(
+            model_cfg.SA_CHANNELS) == len(model_cfg.AGGREGATION_CHANNELS)
+
+        self.SA_modules = nn.ModuleList()
+        self.aggregation_mlps = nn.ModuleList()
+        sa_in_channel = input_channels - 3  # number of channels without xyz
+        skip_channel_list = [sa_in_channel]
+
+        for sa_index in range(self.num_sa):
+            cur_sa_mlps = list(model_cfg.SA_CHANNELS[sa_index])
+            sa_out_channel = 0
+            for radius_index in range(len(model_cfg.RADII[sa_index])):
+                cur_sa_mlps[radius_index] = [sa_in_channel] + list(
+                    cur_sa_mlps[radius_index])
+                sa_out_channel += cur_sa_mlps[radius_index][-1]
+
+            cur_fps_mod = model_cfg.FPS_MODS[sa_index]
+            cur_fps_sample_range_list = model_cfg.FPS_SAMPLE_RANGE_LISTS[sa_index]
+
+            self.SA_modules.append(
+                pointnet2_modules.PointnetSAModuleMSG(
+                    npoint=model_cfg.NUM_POINTS[sa_index],
+                    radii=model_cfg.RADII[sa_index],
+                    nsamples=model_cfg.NUM_SAMPLES[sa_index],
+                    mlps=cur_sa_mlps,
+                    fps_mod=cur_fps_mod,
+                    fps_sample_range_list=cur_fps_sample_range_list))
+            skip_channel_list.append(sa_out_channel)
+            self.aggregation_mlps.append(
+                ConvModule(
+                    sa_out_channel,
+                    model_cfg.AGGREGATION_CHANNELS[sa_index],
+                    conv_cfg=dict(type='Conv1d'),
+                    norm_cfg=dict(type='BN1d'),
+                    kernel_size=1,
+                    bias=True))
+            sa_in_channel = model_cfg.AGGREGATION_CHANNELS[sa_index]
+
+        self.num_point_features = self.model_cfg.AGGREGATION_CHANNELS[-1]
+        self.num_point_features_before_fusion = self.model_cfg.AGGREGATION_CHANNELS[-1]
+
+    def _split_point_feats(self, points):
+        """Split coordinates and features of input points.
+
+        Args:
+            points (torch.Tensor): Point coordinates with features,
+                with shape (B, N, 3 + input_feature_dim).
+
+        Returns:
+            torch.Tensor: Coordinates of input points.
+            torch.Tensor: Features of input points.
+        """
+        xyz = points[..., 0:3].contiguous()
+        if points.size(-1) > 3:
+            features = points[..., 3:].transpose(1, 2).contiguous()
+        else:
+            features = None
+
+        return xyz, features
+
+    def forward(self, batch_dict):
+        """Forward pass.
+
+        Args:
+            points (torch.Tensor): point coordinates with features,
+                with shape (B, N, 3 + input_feature_dim).
+
+        Returns:
+            dict[str, torch.Tensor]: Outputs of the last SA module.
+
+                - sa_xyz (torch.Tensor): The coordinates of sa features.
+                - sa_features (torch.Tensor): The features from the
+                    last Set Aggregation Layers.
+                - sa_indices (torch.Tensor): Indices of the \
+                    input points.
+        """
+        batch_size = batch_dict['batch_size']
+        num_points_feature = batch_dict['points'].shape[-1]
+        points = batch_dict['points'].view(batch_size, -1, num_points_feature)[..., 1:]
+        xyz, features = self._split_point_feats(points)
+
+        batch, num_points = xyz.shape[:2]
+        indices = xyz.new_tensor(range(num_points)).unsqueeze(0).repeat(
+            batch, 1).long()
+
+        sa_xyz = [xyz]
+        sa_features = [features]
+        sa_indices = [indices]
+
+        out_sa_xyz = []
+        out_sa_features = []
+        out_sa_indices = []
+
+        for i in range(self.num_sa):
+            cur_xyz, cur_features, cur_indices = self.SA_modules[i](
+                sa_xyz[i], sa_features[i])
+            cur_features = self.aggregation_mlps[i](cur_features)
+            sa_xyz.append(cur_xyz)
+            sa_features.append(cur_features)
+            sa_indices.append(
+                torch.gather(sa_indices[-1], 1, cur_indices.long()))
+            if i in self.out_indices:
+                out_sa_xyz.append(sa_xyz[-1])
+                out_sa_features.append(sa_features[-1])
+                out_sa_indices.append(sa_indices[-1])
+
+        batch_dict.update({
+            'sa_xyz': out_sa_xyz,
+            'sa_features': out_sa_features,
+            'sa_indices': out_sa_indices
+        })
+
+        return batch_dict
 
 
 class PointNet2MSG(nn.Module):

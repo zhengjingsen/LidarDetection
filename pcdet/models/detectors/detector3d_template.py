@@ -74,7 +74,7 @@ class Detector3DTemplate(nn.Module):
         )
         model_info_dict['module_list'].append(backbone_3d_module)
         model_info_dict['num_point_features'] = backbone_3d_module.num_point_features
-        model_info_dict['num_point_features_before_fusion'] = backbone_3d_module.num_point_features_before_fusion
+        # model_info_dict['num_point_features_before_fusion'] = backbone_3d_module.num_point_features_before_fusion
         return backbone_3d_module, model_info_dict
 
     def build_map_to_bev_module(self, model_info_dict):
@@ -146,7 +146,6 @@ class Detector3DTemplate(nn.Module):
             input_channels=num_point_features,
             num_class=self.num_class if not self.model_cfg.POINT_HEAD.CLASS_AGNOSTIC else 1,
             predict_boxes_when_training=self.model_cfg.get('ROI_HEAD', False),
-            stack_frame_size=self.model_cfg.STACK_FRAME_SIZE
         )
 
         model_info_dict['module_list'].append(point_head_module)

@@ -5,6 +5,7 @@ from .point_head_box import PointHeadBox
 from .point_head_simple import PointHeadSimple
 from .point_head_simple_multiframe import PointHeadSimpleMultiFrame
 from .point_intra_part_head import PointIntraPartOffsetHead
+from .ssd_3d_head import SSD3DHead
 
 __all__ = {
     'AnchorHeadTemplate': AnchorHeadTemplate,
@@ -14,4 +15,5 @@ __all__ = {
     'PointHeadSimpleMultiFrame': PointHeadSimpleMultiFrame,
     'PointHeadBox': PointHeadBox,
     'AnchorHeadMulti': AnchorHeadMulti,
+    'SSD3DHead': SSD3DHead,
 }

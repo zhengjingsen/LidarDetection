@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from . import pointnet2_utils
+from .points_sampler import Points_Sampler
 
 
 class _PointnetSAModuleBase(nn.Module):
@@ -29,10 +30,14 @@ class _PointnetSAModuleBase(nn.Module):
 
         xyz_flipped = xyz.transpose(1, 2).contiguous()
         if new_xyz is None:
+            indices = self.points_sampler(xyz, features)
             new_xyz = pointnet2_utils.gather_operation(
                 xyz_flipped,
-                pointnet2_utils.furthest_point_sample(xyz, self.npoint)
+                indices
             ).transpose(1, 2).contiguous() if self.npoint is not None else None
+        else:
+            indices = None
+            new_xyz = new_xyz.contiguous()
 
         for i in range(len(self.groupers)):
             new_features = self.groupers[i](xyz, new_xyz, features)  # (B, C, npoint, nsample)
@@ -52,14 +57,16 @@ class _PointnetSAModuleBase(nn.Module):
             new_features = new_features.squeeze(-1)  # (B, mlp[-1], npoint)
             new_features_list.append(new_features)
 
-        return new_xyz, torch.cat(new_features_list, dim=1)
+        return new_xyz, torch.cat(new_features_list, dim=1), indices
 
 
 class PointnetSAModuleMSG(_PointnetSAModuleBase):
     """Pointnet set abstraction layer with multiscale grouping"""
 
     def __init__(self, *, npoint: int, radii: List[float], nsamples: List[int], mlps: List[List[int]], bn: bool = True,
-                 use_xyz: bool = True, pool_method='max_pool'):
+                 use_xyz: bool = True, pool_method='max_pool',
+                 fps_mod: List[str] = ['D-FPS'],
+                 fps_sample_range_list: List[int] = [-1]):
         """
         :param npoint: int
         :param radii: list of float, list of radii to group with
@@ -73,7 +80,13 @@ class PointnetSAModuleMSG(_PointnetSAModuleBase):
 
         assert len(radii) == len(nsamples) == len(mlps)
 
-        self.npoint = npoint
+        if isinstance(npoint, int):
+            self.npoint = [npoint]
+        elif isinstance(npoint, list) or isinstance(npoint, tuple):
+            self.npoint = npoint
+        else:
+            raise NotImplementedError('Error type of num_point!')
+
         self.groupers = nn.ModuleList()
         self.mlps = nn.ModuleList()
         for i in range(len(radii)):
@@ -97,6 +110,12 @@ class PointnetSAModuleMSG(_PointnetSAModuleBase):
             self.mlps.append(nn.Sequential(*shared_mlps))
 
         self.pool_method = pool_method
+
+        self.fps_mod_list = fps_mod
+        self.fps_sample_range_list = fps_sample_range_list
+
+        self.points_sampler = Points_Sampler(self.npoint, self.fps_mod_list,
+                                             self.fps_sample_range_list)
 
 
 class PointnetSAModule(PointnetSAModuleMSG):

@@ -55,6 +55,13 @@ DATA_PROCESSOR:
     - NAME: mask_points_and_boxes_outside_range
       REMOVE_OUTSIDE_BOXES: True
 
+    - NAME: sample_points
+      NUM_POINTS: {
+        'train': 20000,
+        'test': 20000
+      }
+      SAMPLE_DISTANCE_THRESH: 40.0
+
     - NAME: shuffle_points
       SHUFFLE_ENABLED: {
         'train': True,

@@ -149,7 +149,7 @@ def enlarge_box3d(boxes3d, extra_width=(0, 0, 0)):
     return large_boxes3d
 
 
-def boxes3d_lidar_to_kitti_camera(boxes3d_lidar):
+def boxes3d_lidar_to_kitti_camera(boxes3d_lidar, calib):
     """
     :param boxes3d_lidar: (N, 7) [x, y, z, dx, dy, dz, heading], (x, y, z) is the box center
     :param calib:
@@ -160,7 +160,7 @@ def boxes3d_lidar_to_kitti_camera(boxes3d_lidar):
     l, w, h, r = boxes3d_lidar[:, 3:4], boxes3d_lidar[:, 4:5], boxes3d_lidar[:, 5:6], boxes3d_lidar[:, 6:7]
 
     xyz_lidar[:, 2] -= h.reshape(-1) / 2
-    xyz_cam = xyz_lidar
+    xyz_cam = calib.lidar_to_rect(xyz_lidar)
     # xyz_cam[:, 1] += h.reshape(-1) / 2
     r = -r - np.pi / 2
     return np.concatenate([xyz_cam, l, h, w, r], axis=-1)

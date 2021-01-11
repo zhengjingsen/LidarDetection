@@ -32,8 +32,43 @@ class FurthestPointSampling(Function):
     def backward(xyz, a=None):
         return None, None
 
+class FurthestPointSamplingWithDist(Function):
+    """Furthest Point Sampling With Distance.
+
+    Uses iterative furthest point sampling to select a set of features whose
+    corresponding points have the furthest distance.
+    """
+
+    @staticmethod
+    def forward(ctx, points_dist: torch.Tensor,
+                num_points: int) -> torch.Tensor:
+        """forward.
+
+        Args:
+            points_dist (Tensor): (B, N, N) Distance between each point pair.
+            num_points (int): Number of points in the sampled set.
+
+        Returns:
+             Tensor: (B, num_points) indices of the sampled points.
+        """
+        assert points_dist.is_contiguous()
+
+        B, N, _ = points_dist.size()
+        output = points_dist.new_zeros([B, num_points], dtype=torch.int32)
+        temp = points_dist.new_zeros([B, N]).fill_(1e10)
+
+        pointnet2.furthest_point_sampling_with_dist_wrapper(
+            B, N, num_points, points_dist, temp, output)
+        ctx.mark_non_differentiable(output)
+        return output
+
+    @staticmethod
+    def backward(xyz, a=None):
+        return None, None
+
 
 furthest_point_sample = FurthestPointSampling.apply
+furthest_point_sample_with_dist = FurthestPointSamplingWithDist.apply
 
 
 class GatherOperation(Function):
@@ -187,7 +222,7 @@ class GroupingOperation(Function):
         idx, N = ctx.for_backwards
 
         B, C, npoint, nsample = grad_out.size()
-        grad_features = Variable(torch.cuda.FloatTensor(B, C, N).zero_())
+        grad_features = torch.cuda.FloatTensor(B, C, N).zero_()
 
         grad_out_data = grad_out.data.contiguous()
         pointnet2.group_points_grad_wrapper(B, C, N, npoint, nsample, grad_out_data, idx, grad_features.data)
@@ -218,6 +253,7 @@ class BallQuery(Function):
         idx = torch.cuda.IntTensor(B, npoint, nsample).zero_()
 
         pointnet2.ball_query_wrapper(B, N, npoint, radius, nsample, new_xyz, xyz, idx)
+        ctx.mark_non_differentiable(idx)
         return idx
 
     @staticmethod
