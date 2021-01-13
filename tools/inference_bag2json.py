@@ -172,7 +172,7 @@ def inference_bag(model, bag_file):
 
             new_object_info['bounds'][0].update(
                 {'center': {'x': loc_x, 'y': loc_y, 'z': obj_loc[2]},
-                 'direction': {'x': 1, 'y': 0, 'z': 0},
+                 'direction': {'x': 0, 'y': 0, 'z': 0},
                  'heading': obj_rz,
                  'is_front_car': 0,
                  'position': {'x': obj_loc[0], 'y': obj_loc[1], 'z': obj_loc[2]},

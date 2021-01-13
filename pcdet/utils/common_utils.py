@@ -30,16 +30,29 @@ def interpolate_pose(pose1, pose2, t1, t2, t_out):
 
 def get_best_pose(timestamp, poses):
   timestamps, poses = poses
-  after_i = bisect.bisect_left(timestamps, timestamp)
-  # print "timestamp is", timestamp, "after_i is", after_i, "top stamps are", timestamps[:2]
-  before_i = max(0, after_i - 1)
-  after_time = timestamps[after_i]
-  before_time = timestamps[before_i]
-  if after_time - before_time >= 0.02:
-    print("warning, hole of size", after_time - before_time)
-  if before_i == after_i:
-    # print "beep"
-    return poses[before_i]
+  # print "timestamp is ", timestamp, ", timestamps[0] is ", timestamps[0], ", timestamps[-1] is ", timestamps[-1]
+  if timestamp <= timestamps[0]:
+    trans = poses[0][0] - (timestamps[0] - timestamp) / (timestamps[1] - timestamps[0]) * (poses[1][0] - poses[0][0])
+    quat = quaternion.squad(np.array([np.quaternion(poses[0][1][3], poses[0][1][0], poses[0][1][1], poses[0][1][2]),
+                                      np.quaternion(poses[1][1][3], poses[1][1][0], poses[1][1][1], poses[1][1][2])]),
+                            np.array([timestamps[0], timestamps[1]]),
+                            np.array([timestamp]))[0]
+    return (trans, np.array([quat.x, quat.y, quat.z, quat.w]))
+  elif timestamp > timestamps[-1]:
+    trans = poses[-1][0] + (timestamp - timestamps[-1]) / (timestamps[-1] - timestamps[-2]) * (poses[-1][0] - poses[-2][0])
+    quat = quaternion.squad(np.array([np.quaternion(poses[-2][1][3], poses[-2][1][0], poses[-2][1][1], poses[-2][1][2]),
+                                      np.quaternion(poses[-1][1][3], poses[-1][1][0], poses[-1][1][1], poses[-1][1][2])]),
+                            np.array([timestamps[-2], timestamps[-1]]),
+                            np.array([timestamp]))[0]
+    return (trans, np.array([quat.x, quat.y, quat.z, quat.w]))
+  else:
+    after_i = bisect.bisect_left(timestamps, timestamp)
+    before_i = after_i - 1
+    after_time = timestamps[after_i]
+    before_time = timestamps[before_i]
+    if after_time - before_time >= 0.02:
+      print("warning, hole of size", after_time - before_time)
+
   return interpolate_pose(poses[before_i], poses[after_i], before_time, after_time, timestamp)
 
 
