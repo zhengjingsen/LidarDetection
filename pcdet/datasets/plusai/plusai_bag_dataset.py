@@ -113,7 +113,7 @@ class BagMultiframeDatasetUnifyLidar(DatasetTemplate):
                                  msg.pose.pose.orientation.z,
                                  msg.pose.pose.orientation.w])
                 odom_list.append((timestamp, (pos, quat)))
-            odom_list = sorted(odom_list)
+            odom_list = sorted(odom_list, key=lambda x : x[0])
             self.timestamps = [e[0] for e in odom_list]
             self.poses = [e[1] for e in odom_list]
 

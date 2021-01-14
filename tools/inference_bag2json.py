@@ -215,7 +215,8 @@ if __name__ == '__main__':
     else:
         bags = os.listdir(args.bag_file)
         for bag in bags:
-            bag_files.append(os.path.join(args.bag_file, bag))
+            if bag.endswith('.bag'):
+                bag_files.append(os.path.join(args.bag_file, bag))
 
     # Inference with model
     with torch.no_grad():
@@ -225,5 +226,10 @@ if __name__ == '__main__':
         model.eval()
 
         for bag_file in bag_files:
+            json_file_name = os.path.join(args.save_path, bag_file.split('/')[-1] + '.json')
+            if os.path.isfile(json_file_name):
+                logger.info("====== {} has been processed, skip this bag! ======".format(json_file_name))
+                continue
+
             logger.info('========== Start process bag {} =========='.format(bag_file))
             inference_bag(model, bag_file)
