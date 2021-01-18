@@ -189,7 +189,7 @@ def inference_bag(model, bag_file):
 
     # generate uuid
     for object in json_dict['objects']:
-        object['uuid'] = str(uuid.uuid1())
+        object['uuid'] = str(uuid.uuid4())
     json_txt = json.dumps(json_dict, indent=4)
     json_file_name = os.path.join(args.save_path, bag_file.split('/')[-1] + '.json')
     with open(json_file_name, 'w') as f:
