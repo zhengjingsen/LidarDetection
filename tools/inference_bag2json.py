@@ -231,5 +231,7 @@ if __name__ == '__main__':
                 logger.info("====== {} has been processed, skip this bag! ======".format(json_file_name))
                 continue
 
-            logger.info('========== Start process bag {} =========='.format(bag_file))
+            logger.info('====== Start process bag {} ======'.format(bag_file))
             inference_bag(model, bag_file)
+
+    logger.info("All results have been saved in {}".format(args.save_path))
