@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from mmcv.cnn import ConvModule
+from ..model_utils.conv_module import ConvModule
 
 from ...ops.pointnet2.pointnet2_batch import pointnet2_modules
 from ...ops.pointnet2.pointnet2_stack import pointnet2_modules as pointnet2_modules_stack
@@ -93,7 +93,7 @@ class PointNet2SAMSG(nn.Module):
                     sa_out_channel,
                     model_cfg.AGGREGATION_CHANNELS[sa_index],
                     conv_cfg=dict(type='Conv1d'),
-                    norm_cfg=dict(type='BN1d'),
+                    norm_cfg=dict(type='BatchNorm1d'),
                     kernel_size=1,
                     bias=True))
             sa_in_channel = model_cfg.AGGREGATION_CHANNELS[sa_index]

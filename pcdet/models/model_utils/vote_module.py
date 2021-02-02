@@ -1,5 +1,5 @@
 import torch
-from mmcv.cnn import ConvModule
+from ..model_utils.conv_module import ConvModule
 from torch import nn as nn
 from ...utils import loss_utils
 
@@ -36,7 +36,7 @@ class VoteModule(nn.Module):
                  num_points=-1,
                  conv_channels=(16, 16),
                  conv_cfg=dict(type='Conv1d'),
-                 norm_cfg=dict(type='BN1d'),
+                 norm_cfg=dict(type='BatchNorm1d'),
                  act_cfg=dict(type='ReLU'),
                  norm_feats=True,
                  with_res_feat=True,

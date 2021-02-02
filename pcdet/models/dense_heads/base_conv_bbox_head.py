@@ -1,5 +1,5 @@
 from torch import nn as nn
-from mmcv.cnn import ConvModule
+from ..model_utils.conv_module import ConvModule
 
 class BaseConvBboxHead(nn.Module):
     r"""More general bbox head, with shared conv layers and two optional
@@ -20,7 +20,7 @@ class BaseConvBboxHead(nn.Module):
                  reg_conv_channels=(),
                  num_reg_out_channels=0,
                  conv_cfg=dict(type='Conv1d'),
-                 norm_cfg=dict(type='BN1d'),
+                 norm_cfg=dict(type='BatchNorm1d'),
                  act_cfg=dict(type='ReLU'),
                  bias='auto',
                  *args,

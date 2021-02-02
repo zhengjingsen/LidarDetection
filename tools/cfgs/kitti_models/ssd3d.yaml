@@ -45,15 +45,6 @@ MODEL:
         FPS_MODS: [['D-FPS'], ['FS'], ['F-FPS', 'D-FPS']]
         FPS_SAMPLE_RANGE_LISTS: [[-1], [-1], [512, -1]]
         OUT_INDICES: [2, ]
-        NORM_CFG:
-            TYPE: 'BN2d'
-            EPS: 1e-3
-            MOMENTUM: 0.1
-        SA_CFG:
-            TYPE: 'PointSAModuleMSG'
-            POOL_MOD: 'max'
-            USE_XYZ: True
-            NORMALIZE_XYZ: False
 
     POINT_HEAD:
         NAME: SSD3DHead
@@ -73,7 +64,7 @@ MODEL:
             conv_cfg:
                 type: 'Conv1d'
             norm_cfg:
-                type: 'BN1d'
+                type: 'BatchNorm1d'
                 eps: 0.001
                 momentum: 0.1
             with_res_feat: False
@@ -85,10 +76,6 @@ MODEL:
             radii: [4.8, 6.4]
             sample_nums: [16, 32]
             mlp_channels: [[256, 256, 256, 512], [256, 256, 512, 1024]]
-            norm_cfg:
-                type: 'BN2d'
-                eps: 0.001
-                momentum: 0.1
             use_xyz: True
             normalize_xyz: False
             bias: True
@@ -101,7 +88,7 @@ MODEL:
             conv_cfg:
                 type: 'Conv1d'
             norm_cfg:
-                type: 'BN1d'
+                type: 'BatchNorm1d'
                 eps: 0.001
                 momentum: 0.1
             bias: True
