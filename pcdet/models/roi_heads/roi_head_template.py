@@ -281,8 +281,8 @@ class RoIHeadTemplate(nn.Module):
         batch_box_preds = self.box_coder.decode_torch(batch_box_preds, local_rois).view(-1, code_size)
 
         batch_box_preds[:, [0, 1, 2, 6]] = decode_by_roi(batch_box_preds[:, [0, 1, 2, 6]], roi_ry, roi_xyz)
+        box_preds_size = box_preds.shape[1]
         if self.model_cfg.TARGET_CONFIG.get('REG_TRACKING_INFO', False):
-            box_preds_size = box_preds.shape[1]
             tracking_info = box_preds[..., code_size:].view(-1, box_preds_size - code_size)
             tracking_info[:, [0, 1, 2, 6]] = decode_by_roi(tracking_info[:, [0, 1, 2, 6]], roi_ry, roi_xyz)
             tracking_info[:, [3, 4, 5, 7]] = decode_by_roi(tracking_info[:, [3, 4, 5, 7]], roi_ry, roi_xyz)

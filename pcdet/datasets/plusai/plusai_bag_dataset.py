@@ -303,6 +303,7 @@ class DemoDataset(DatasetTemplate):
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
         self.root_path = root_path
+        self.num_point_features = dataset_cfg.DATA_AUGMENTOR.AUG_CONFIG_LIST[0].NUM_POINT_FEATURES
         self.ext = ext
         self.split = 'test'
         if self.root_path.is_dir():
@@ -323,7 +324,7 @@ class DemoDataset(DatasetTemplate):
 
     def __getitem__(self, index):
         if self.ext == '.bin':
-            points = np.fromfile(self.sample_file_list[index], dtype=np.float32).reshape(-1, 5)
+            points = np.fromfile(self.sample_file_list[index], dtype=np.float32).reshape(-1, self.num_point_features)
         elif self.ext == '.npy':
             points = np.load(self.sample_file_list[index])
         else:

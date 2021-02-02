@@ -32,7 +32,7 @@ class LaserDetVis:
   def add_points(self, points):
     self.points = points[:, 0:3]
     if points.shape[1] >= 4:
-      intensity = points[:, 4]
+      intensity = points[:, -1]
       intensity = ((intensity - intensity.min()) /
                    (intensity.max() - intensity.min()) *
                    128 + 127).astype(np.uint8)
