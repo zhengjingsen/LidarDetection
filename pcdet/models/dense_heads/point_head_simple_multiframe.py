@@ -10,14 +10,13 @@ class PointHeadSimpleMultiFrame(PointHeadTemplate):
     Reference Paper: https://arxiv.org/abs/1912.13192
     PV-RCNN: Point-Voxel Feature Set Abstraction for 3D Object Detection
     """
-    def __init__(self, num_class, input_channels, model_cfg, stack_frame_size, **kwargs):
+    def __init__(self, num_class, input_channels, model_cfg, **kwargs):
         super().__init__(model_cfg=model_cfg, num_class=num_class)
-        assert isinstance(stack_frame_size, int)
-        self.stack_frame_size = stack_frame_size
+        self.stack_frame_size = model_cfg.STACK_FRAME_SIZE
         self.cls_layers = self.make_fc_layers(
             fc_cfg=self.model_cfg.CLS_FC,
             input_channels=input_channels,
-            output_channels=num_class * stack_frame_size
+            output_channels=num_class * self.stack_frame_size
         )
 
     def assign_targets(self, input_dict):

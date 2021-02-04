@@ -153,6 +153,7 @@ MODEL:
 
     POINT_HEAD:
         NAME: PointHeadSimpleMultiFrame
+        STACK_FRAME_SIZE: 3
         CLS_FC: [256, 256]
         CLASS_AGNOSTIC: True
         USE_POINT_FEATURES_BEFORE_FUSION: True
