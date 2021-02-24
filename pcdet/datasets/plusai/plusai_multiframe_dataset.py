@@ -134,6 +134,18 @@ class PlusAIMultiframeDataset(DatasetTemplate):
                     gt_boxes_lidar = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1)
                     annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
+                    # gt_boxes_corner = []
+                    # cur_gt_boxes = gt_boxes_lidar.copy()
+                    # for idx in range(annotations['locations'].shape[1]):
+                    #     cur_gt_boxes[:, 0:3] = annotations['locations'][:, idx, :]
+                    #     cur_gt_boxes[:, -1] = annotations['rotations_y'][:, idx]
+                    #     gt_boxes_corner.append(box_utils.boxes_to_corners_3d(cur_gt_boxes))
+                    # gt_boxes_corner = np.concatenate(gt_boxes_corner, axis=1)
+                    # gt_boxes_corner_local = common_utils.rotate_points_along_z(gt_boxes_corner, -gt_boxes_lidar[:, -1])
+                    # multi_length = gt_boxes_corner_local[:, :, 0].max(axis=1) - gt_boxes_corner_local[:, :, 0].min(axis=1)
+                    # multi_width = gt_boxes_corner_local[:, :, 1].max(axis=1) - gt_boxes_corner_local[:, :, 1].min(axis=1)
+                    # annotations['gt_boxes_enlarged'] = np.concatenate([gt_boxes_lidar[:, 0:3], multi_length[:, np.newaxis], multi_width[:, np.newaxis], gt_boxes_lidar[:, 5:]], axis=-1)
+
                     # if count_inside_pts:
                     #     # annotations['num_points_in_gt'] = np.array([label['num_points_in_gt'] for label in obj_labels])
                     #     annotations['num_points_in_gt'] = np.array([20 for label in obj_labels])
@@ -204,6 +216,7 @@ class PlusAIMultiframeDataset(DatasetTemplate):
                                'box3d_lidar': gt_boxes[i], 'num_points_in_gt': num_points_in_gt,
                                'difficulty': difficulty[i], 'bbox': bbox[i], 'score': annos['score'][i],
                                'locations': annos['locations'][i], 'rotations_y': annos['rotations_y'][i]}
+                            #    'gt_boxes_enlarged': annos['gt_boxes_enlarged'][i]}
                     if names[i] in all_db_infos:
                         all_db_infos[names[i]].append(db_info)
                     else:

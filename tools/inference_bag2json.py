@@ -143,6 +143,10 @@ def inference_bag(model, bag_file):
                          'size': {'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]},
                          })
 
+                    if tracked_objects['det_scores'][obj_idx] > archived_object['score']:
+                        archived_object['score'] = tracked_objects['det_scores'][obj_idx]
+                        archived_object['size'].update({'x': obj_dim[0], 'y': obj_dim[1], 'z': obj_dim[2]})
+
                     archived_object['bounds'].append(bound_info)
                     FIND_IN_ARCHIVE = True
                     break
@@ -160,6 +164,7 @@ def inference_bag(model, bag_file):
                                            'velocity': {'x': 0, 'y': 0, 'z': 0}}
                                           ],
                                'size': {},
+                               'score': tracked_objects['det_scores'][obj_idx],
                                'uuid': str(tracked_objects['object_ids'][obj_idx])
                                }
             obj_loc = tracked_objects['pred_boxes'][obj_idx, :3].tolist()
@@ -188,8 +193,12 @@ def inference_bag(model, bag_file):
         logger.info("Inference results video saved as {}".format(video_file_name))
 
     # generate uuid
+    objects = []
     for object in json_dict['objects']:
-        object['uuid'] = str(uuid.uuid4())
+        if len(object['bounds']) >= 10:
+            object['uuid'] = str(uuid.uuid4())
+            objects.append(object)
+    json_dict['objects'] = objects
     json_txt = json.dumps(json_dict, indent=4)
     json_file_name = os.path.join(args.save_path, bag_file.split('/')[-1] + '.json')
     with open(json_file_name, 'w') as f:
