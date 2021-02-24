@@ -36,4 +36,9 @@ void furthest_point_sampling_with_dist_kernel_launcher(int b, int n, int m,
                                                        float *temp, int *idxs,
                                                        cudaStream_t stream);
 
+int feature_furthest_point_sampling_wrapper(int b, int n, int m, int c,
+    at::Tensor points_tensor, at::Tensor temp_tensor, at::Tensor idx_tensor);
+
+void feature_furthest_point_sampling_kernel_launcher(int b, int n, int m, int c,
+    const float *dataset, float *temp, int *idxs);
 #endif

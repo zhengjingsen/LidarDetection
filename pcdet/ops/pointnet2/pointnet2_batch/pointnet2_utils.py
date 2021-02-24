@@ -26,6 +26,7 @@ class FurthestPointSampling(Function):
         temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
 
         pointnet2.furthest_point_sampling_wrapper(B, N, npoint, xyz, temp, output)
+        ctx.mark_non_differentiable(output)
         return output
 
     @staticmethod

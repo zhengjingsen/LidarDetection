@@ -186,7 +186,7 @@ void furthest_point_sampling_kernel_launcher(int b, int n, int m,
 template <unsigned int block_size>
 __global__ void feature_furthest_point_sampling_kernel(int b, int n, int m, int c,
     const float *__restrict__ dataset, float *__restrict__ temp, int *__restrict__ idxs) {
-    // dataset: (B, N, 3)
+    // dataset: (B, N, C)
     // tmp: (B, N)
     // output:
     //      idx: (B, M)
@@ -196,7 +196,7 @@ __global__ void feature_furthest_point_sampling_kernel(int b, int n, int m, int 
     __shared__ int dists_i[block_size];
 
     int batch_index = blockIdx.x;
-    dataset += batch_index * n * 3;
+    dataset += batch_index * n * c;
     temp += batch_index * n;
     idxs += batch_index * m;
 

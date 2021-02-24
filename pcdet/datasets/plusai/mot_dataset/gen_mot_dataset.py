@@ -102,7 +102,7 @@ def preprocess_dataset():
 
     with futures.ThreadPoolExecutor(args.num_workers) as executor:
         results = list(tqdm(executor.map(process_single_bag, valid_bags), total=len(valid_bags)))
-        logger.info('Extract data from bag and label result: ', results)
+        logger.info('Extract data from bag and label result: {}'.format(results))
 
 def process_obstacles(obstacles_dict):
   # We will process obstacles from dict to list

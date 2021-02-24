@@ -71,7 +71,7 @@ MODEL:
             vote_xyz_range: [10.0, 3.0, 3.0]
 
         VOTE_AGGREGATION_CFG:
-            type: 'PointSAModuleMSG'
+            type: 'PointnetSAModuleMSG'
             num_point: 256
             radii: [4.8, 6.4]
             sample_nums: [16, 32]
