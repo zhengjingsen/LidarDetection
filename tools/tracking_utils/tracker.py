@@ -87,7 +87,7 @@ class AB3DMOT(object):        # A baseline of 3D multi-object tracking
 
     trks = np.zeros((len(self.trackers), 7), dtype=np.float32)         # N x 7 , # get predicted locations from existing trackers.
     to_del = []
-    info_tracked_objects = {'object_ids': [], 'object_types': [], 'pred_boxes': []}
+    info_tracked_objects = {'object_ids': [], 'object_types': [], 'det_scores': [], 'pred_boxes': []}
     for t, trk in enumerate(trks):
       pos = self.trackers[t].predict().reshape((-1, 1))
       trk[:] = [pos[0], pos[1], pos[2], pos[3], pos[4], pos[5], pos[6]]
@@ -117,6 +117,7 @@ class AB3DMOT(object):        # A baseline of 3D multi-object tracking
       if ((trk.time_since_update < self.max_age) and (trk.hits >= self.min_hits or self.frame_count <= self.min_hits)):
         info_tracked_objects['object_ids'].append(trk.id + 1)
         info_tracked_objects['object_types'].append(trk.info[1])
+        info_tracked_objects['det_scores'].append(trk.info[0])
         info_tracked_objects['pred_boxes'].append(d)
       i -= 1
 
@@ -126,6 +127,7 @@ class AB3DMOT(object):        # A baseline of 3D multi-object tracking
 
     info_tracked_objects['object_ids'] = np.array(info_tracked_objects['object_ids'], dtype=np.int)
     info_tracked_objects['object_types'] = np.array(info_tracked_objects['object_types'], dtype=np.int)
+    info_tracked_objects['det_scores'] = np.array(info_tracked_objects['det_scores'], dtype=np.float)
     info_tracked_objects['pred_boxes'] = np.array(info_tracked_objects['pred_boxes'], dtype=np.float)
 
     return info_tracked_objects
