@@ -119,8 +119,13 @@ class VoxelSetAbstraction(nn.Module):
     def get_sampled_points(self, batch_dict):
         batch_size = batch_dict['batch_size']
         if self.model_cfg.POINT_SOURCE == 'raw_points':
-            src_points = batch_dict['points'][:, 1:4]
-            batch_indices = batch_dict['points'][:, 0].long()
+            if batch_dict['points'].shape[1] > 5:
+                idx = batch_dict['points'][:, -1] == 1
+                points = batch_dict['points'][idx]
+            else:
+                points = batch_dict['points']
+            src_points = points[:, 1:4]
+            batch_indices = points[:, 0].long()
         elif self.model_cfg.POINT_SOURCE == 'voxel_centers':
             src_points = common_utils.get_voxel_centers(
                 batch_dict['voxel_coords'][:, 1:4],

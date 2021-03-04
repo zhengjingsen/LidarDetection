@@ -2,7 +2,7 @@ import os
 import subprocess
 
 from setuptools import find_packages, setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CppExtension
 
 
 def get_git_commit_number():
@@ -13,6 +13,12 @@ def get_git_commit_number():
     git_commit_number = cmd_out.stdout.decode('utf-8')[:7]
     return git_commit_number
 
+def make_cpp_ext(name, module, sources):
+    cpp_ext = CppExtension(
+        name='%s.%s' % (module, name),
+        sources=[os.path.join(*module.split('.'), src) for src in sources]
+    )
+    return cpp_ext
 
 def make_cuda_ext(name, module, sources):
     cuda_ext = CUDAExtension(
@@ -107,5 +113,18 @@ if __name__ == '__main__':
 
                 ],
             ),
+            make_cpp_ext(
+                name='pointcloud_voxel',
+                module='pcdet.ops.PointCloudVoxel',
+                sources=['src/PointCloudVoxel.cpp'],
+            ),
+            make_cuda_ext(
+                name='scatter_max',
+                module='pcdet.ops.scatter',
+                sources=[
+                        'cuda/scatter_max.cpp',
+                        'cuda/scatter_max_cuda.cu'
+                ],
+            )
         ],
     )

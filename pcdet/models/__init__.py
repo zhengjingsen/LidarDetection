@@ -15,11 +15,12 @@ def build_network(model_cfg, num_class, dataset):
 
 def load_data_to_gpu(batch_dict):
     for key, val in batch_dict.items():
-        if not isinstance(val, np.ndarray):
-            continue
         if key in ['frame_id', 'metadata', 'calib', 'image_shape']:
             continue
-        batch_dict[key] = torch.from_numpy(val).float().cuda()
+        if isinstance(val, np.ndarray):
+            batch_dict[key] = torch.from_numpy(val).float().cuda()
+        if isinstance(val, torch.Tensor):
+            batch_dict[key] = val.cuda()
 
 
 def model_fn_decorator():

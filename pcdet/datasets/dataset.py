@@ -1,6 +1,6 @@
 from collections import defaultdict
 from pathlib import Path
-
+import torch
 import numpy as np
 import torch.utils.data as torch_data
 
@@ -152,34 +152,53 @@ class DatasetTemplate(torch_data.Dataset):
 
     @staticmethod
     def collate_batch(batch_list, _unused=False):
-        data_dict = defaultdict(list)
-        for cur_sample in batch_list:
-            for key, val in cur_sample.items():
-                data_dict[key].append(val)
-        batch_size = len(batch_list)
+        example_merged = defaultdict(list)
+        for example in batch_list:
+            for k, v in example.items():
+                example_merged[k].append(v)
         ret = {}
+        for key, elems in example_merged.items():
+            if key in ['voxels', 'num_points', 'voxel_centers', 'seg_labels', 'part_labels', 'bbox_reg_labels']:
+                ret[key] = np.concatenate(elems, axis=0)
+            elif key in ['coordinates', 'points']:
+                coors = []
+                for i, coor in enumerate(elems):
+                    coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
+                    coors.append(coor_pad)
+                ret[key] = np.concatenate(coors, axis=0)
+            elif key in ['gt_boxes']:
+                max_gt = 0
+                batch_size = elems.__len__()
+                for k in range(batch_size):
+                    max_gt = max(max_gt, elems[k].__len__())
+                batch_gt_boxes3d = np.zeros((batch_size, max_gt, elems[0].shape[-1]), dtype=np.float32)
+                for k in range(batch_size):
+                    batch_gt_boxes3d[k, :elems[k].__len__(), :] = elems[k]
+                ret[key] = batch_gt_boxes3d
+            elif key in ['bev_local_coordinate', 'fv_local_coordinate', 'intensity', 'bev_coordinate']:
+                ret[key] = torch.cat(elems, dim=0)
+            elif key in ['bev_mapping_vf', 'fv_mapping_vf']:
+                for idx, elem in enumerate(elems):
+                    cur_elem = torch.cat((idx * torch.ones((elem.shape[0], 1), dtype=torch.int32), elem), dim=1)
+                    if idx == 0:
+                        ret[key] = cur_elem
+                    else:
+                        ret[key] = torch.cat((ret[key], cur_elem), dim=0)
 
-        for key, val in data_dict.items():
-            try:
-                if key in ['voxels', 'voxel_num_points']:
-                    ret[key] = np.concatenate(val, axis=0)
-                elif key in ['points', 'voxel_coords']:
-                    coors = []
-                    for i, coor in enumerate(val):
-                        coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
-                        coors.append(coor_pad)
-                    ret[key] = np.concatenate(coors, axis=0)
-                elif key in ['gt_boxes', 'locations', 'rotations_y']:
-                    max_gt = max([len(x) for x in val])
-                    batch_gt_boxes3d = np.zeros([batch_size, max_gt, *list(val[0].shape[1:])], dtype=np.float32)
-                    for k in range(batch_size):
-                        batch_gt_boxes3d[k, :val[k].__len__(), ...] = val[k]
-                    ret[key] = batch_gt_boxes3d
-                else:
-                    ret[key] = np.stack(val, axis=0)
-            except:
-                print('Error in collate_batch: key=%s' % key)
-                raise TypeError
-
-        ret['batch_size'] = batch_size
+                ret[key] = ret[key].long()
+            elif key in ['bev_mapping_pv', 'fv_mapping_pv']:
+                cur_voxel_num = 0
+                for idx, elem in enumerate(elems):
+                    if idx == 0:
+                        ret[key] = elem
+                    else:
+                        ret[key] = torch.cat((ret[key], elem + cur_voxel_num), dim=0)
+                    if key == 'bev_mapping_pv':
+                        cur_voxel_num += example_merged['bev_mapping_vf'][idx].shape[0]
+                    else:
+                        cur_voxel_num += example_merged['fv_mapping_vf'][idx].shape[0]
+                ret[key] = ret[key].long()
+            else:
+                ret[key] = np.stack(elems, axis=0)
+        ret['batch_size'] = batch_list.__len__()
         return ret

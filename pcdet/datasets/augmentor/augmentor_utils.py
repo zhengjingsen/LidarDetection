@@ -136,6 +136,27 @@ def global_rotation(gt_boxes, points, rot_range, locations=None, rotations_y=Non
 
     return gt_boxes, points
 
+def global_translate(gt_boxes, points, trans_range, locations=None, rotations_y=None):
+    """
+    Args:
+        gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
+        points: (M, 3 + C),
+        rot_range: [min, max]
+        locations: (N, S, 3)    S means stack frame size in multi-frame mode
+        rotations_y: (N, S)
+    Returns:
+    """
+    noise_trans = np.random.uniform(low=-1.0, high=1.0, size=3)
+    noise_trans *= trans_range
+
+    points[:, :3] += noise_trans
+    gt_boxes[:, 0:3] += noise_trans
+
+    if locations is not None:
+        locations += noise_trans
+        return gt_boxes, points, locations, rotations_y
+
+    return gt_boxes, points
 
 def global_scaling(gt_boxes, points, scale_range, locations=None, rotations_y=None):
     """
