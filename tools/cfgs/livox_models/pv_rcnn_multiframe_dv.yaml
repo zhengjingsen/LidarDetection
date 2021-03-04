@@ -38,12 +38,36 @@ DATA_CONFIG:
             - NAME: random_world_scaling
               WORLD_SCALE_RANGE: [0.95, 1.05]
 
+
+    DATA_PROCESSOR:
+        - NAME: mask_points_and_boxes_outside_range
+          REMOVE_OUTSIDE_BOXES: True
+
+        - NAME: sample_points
+          NUM_POINTS: {
+              'train': 120000,
+              'test': 120000
+          }
+          SAMPLE_DISTANCE_THRESH: 40.0
+
+        - NAME: shuffle_points
+          SHUFFLE_ENABLED: {
+              'train': True,
+              'test': False
+          }
+
+        - NAME: transform_points_to_dynamic_voxels
+          MAX_POINT_NUMS: 120000
+          VOXEL_SIZE: [ 0.16, 0.16, 0.2 ]
+          MAX_NUMBER_OF_VOXELS: 96000
+
+
 MODEL:
     NAME: PVRCNN
     STACK_FRAME_SIZE: 3
 
     VFE:
-        NAME: MeanVFE
+        NAME: MeanVFEDV
 
     BACKBONE_3D:
         NAME: VoxelBackBone8x
@@ -156,6 +180,7 @@ MODEL:
 
     POINT_HEAD:
         NAME: PointHeadSimpleMultiFrame
+        STACK_FRAME_SIZE: 3
         CLS_FC: [256, 256]
         CLASS_AGNOSTIC: True
         USE_POINT_FEATURES_BEFORE_FUSION: True

@@ -1,7 +1,7 @@
 from functools import partial
 
+import torch
 import numpy as np
-
 from ...utils import box_utils, common_utils
 
 
@@ -77,6 +77,54 @@ class DataProcessor(object):
         data_dict['voxels'] = voxels
         data_dict['voxel_coords'] = coordinates
         data_dict['voxel_num_points'] = num_points
+        return data_dict
+
+    def transform_points_to_dynamic_voxels(self, data_dict=None, config=None, voxel_generator=None):
+        if data_dict is None:
+            from ...ops.PointCloudVoxel.pointcloud_voxel import PointCloudVoxel
+            grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(config.VOXEL_SIZE)
+            self.grid_size = np.round(grid_size).astype(np.int32)
+            self.voxel_size = config.VOXEL_SIZE
+            self.max_points_num = config.MAX_POINT_NUMS
+            self.max_num_of_voxels = config.MAX_NUMBER_OF_VOXELS
+            voxel_generator = PointCloudVoxel(0,
+                                              self.grid_size[0],
+                                              self.grid_size[1],
+                                              self.grid_size[2],
+                                              self.point_cloud_range[0], self.point_cloud_range[3],
+                                              self.point_cloud_range[1], self.point_cloud_range[4],
+                                              self.point_cloud_range[2], self.point_cloud_range[5],
+                                              0, 1, 1, 0, 0, 0, 1)
+
+            return partial(self.transform_points_to_dynamic_voxels, voxel_generator=voxel_generator)
+
+        # do my generate
+        points = data_dict['points']
+        points = torch.from_numpy(points)
+
+        bev_coordinate = torch.zeros((self.max_points_num, 3), dtype=torch.float32)
+        bev_local_coordinate = torch.zeros((self.max_points_num, 3), dtype=torch.float32)
+        intensity = torch.zeros((self.max_points_num), dtype=torch.float32)
+        bev_mapping_pv = torch.zeros((self.max_points_num), dtype=torch.int32)
+        bev_mapping_vf = torch.zeros((self.max_num_of_voxels, 3), dtype=torch.int32)
+
+        voxel_generator.dynamicVoxelBEV(points, bev_coordinate, bev_local_coordinate, intensity,
+                                        bev_mapping_pv, bev_mapping_vf)
+        valid_point_nums = voxel_generator.getValidPointNums()
+        valid_bev_voxel_nums = voxel_generator.getValidBEVVoxelNums()
+
+        bev_coordinate = bev_coordinate[:valid_point_nums]
+        bev_local_coordinate = bev_local_coordinate[:valid_point_nums]
+        intensity = intensity[:valid_point_nums]
+        bev_mapping_pv = bev_mapping_pv[:valid_point_nums]
+        bev_mapping_vf = bev_mapping_vf[:valid_bev_voxel_nums]
+        data_dict.update({
+            'bev_coordinate': bev_coordinate,
+            'bev_local_coordinate': bev_local_coordinate,
+            'intensity': intensity,
+            'bev_mapping_pv': bev_mapping_pv,
+            'bev_mapping_vf': bev_mapping_vf,
+        })
         return data_dict
 
     def sample_points(self, data_dict=None, config=None):

@@ -108,6 +108,27 @@ class DataAugmentor(object):
         data_dict['points'] = points
         return data_dict
 
+    def random_world_translate(self, data_dict=None, config=None):
+        if data_dict is None:
+            return partial(self.random_world_translate, config=config)
+        trans_range = config['WORLD_TRANS_RANGE']
+        assert isinstance(trans_range, list)
+        if 'locations' in data_dict and 'rotations_y' in data_dict:
+            gt_boxes, points, locations, rotations_y = augmentor_utils.global_translate(
+                data_dict['gt_boxes'], data_dict['points'], trans_range=trans_range,
+                locations=data_dict['locations'], rotations_y=data_dict['rotations_y']
+            )
+            data_dict['locations'] = locations
+            data_dict['rotations_y'] = rotations_y
+        else:
+            gt_boxes, points = augmentor_utils.global_translate(
+                data_dict['gt_boxes'], data_dict['points'], trans_range=trans_range
+            )
+
+        data_dict['gt_boxes'] = gt_boxes
+        data_dict['points'] = points
+        return data_dict
+
     def random_world_scaling(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.random_world_scaling, config=config)
