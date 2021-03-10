@@ -1,0 +1,236 @@
+CLASS_NAMES: ['Car', 'Truck']
+
+DATA_CONFIG:
+    _BASE_CONFIG_: cfgs/dataset_configs/plusai_multiframe_dataset.yaml
+    STACK_FRAME_SIZE: 3
+    DATA_AUGMENTOR:
+        DISABLE_AUG_LIST: ['placeholder']
+        AUG_CONFIG_LIST:
+            # - NAME: random_gt_rotation
+            #   GT_ROT_ANGLE: [-0.087, 0.087]
+
+            - NAME: gt_sampling
+              USE_ROAD_PLANE: False
+              DB_INFO_PATH:
+                  - plusai_dbinfos_train.pkl
+              PREPARE: {
+                 filter_by_min_points: ['Car:0', 'Truck:0'],
+                 filter_by_difficulty: [-1],
+              }
+
+              SAMPLE_GROUPS: ['Car:0','Truck:0']
+              NUM_POINT_FEATURES: 5
+              DATABASE_WITH_FAKELIDAR: False
+              #SAMPLE_ROT_ANGLE: [-0.087, 0.087]
+              REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
+              REMOVE_SAMPLE_BOXES_EXTRA_WIDTH: [1.0, 0.5, 0]
+              LIMIT_WHOLE_SCENE: False
+
+            - NAME: random_world_flip
+              ALONG_AXIS_LIST: ['x']
+
+            - NAME: random_world_rotation
+              WORLD_ROT_ANGLE: [-0.051, 0.051]
+
+            - NAME: random_world_translate
+              WORLD_TRANS_RANGE: [0.16, 0.16, 0.2]
+
+            - NAME: random_world_scaling
+              WORLD_SCALE_RANGE: [0.95, 1.05]
+
+MODEL:
+    NAME: PPRCNN
+    STACK_FRAME_SIZE: 3
+
+    BACKBONE_3D:
+        NAME: PointNet2SAMSG
+        IN_CHANNELS: 4
+        NUM_POINTS: [ 4096, 512, [ 256, 256 ] ]
+        RADII: [ [ 0.2, 0.4, 0.8 ], [ 0.4, 0.8, 1.6 ], [ 1.6, 3.2, 4.8 ] ]
+        NUM_SAMPLES: [ [ 32, 32, 64 ], [ 32, 32, 64 ], [ 32, 32, 32 ] ]
+        SA_CHANNELS: [ [ [ 16, 16, 32 ], [ 16, 16, 32 ], [ 32, 32, 64 ] ],
+                       [ [ 64, 64, 128 ], [ 64, 64, 128 ], [ 64, 96, 128 ] ],
+                       [ [ 128, 128, 256 ], [ 128, 192, 256 ], [ 128, 256, 256 ] ] ]
+        AGGREGATION_CHANNELS: [ 64, 128, 256 ]
+        FPS_MODS: [ [ 'D-FPS' ], [ 'FS' ], [ 'F-FPS', 'D-FPS' ] ]
+        FPS_SAMPLE_RANGE_LISTS: [ [ -1 ], [ -1 ], [ 512, -1 ] ]
+        OUT_INDICES: [ 0, 1, 2, ]
+
+    POINT_HEAD:
+        NAME: SSD3DHead
+        CLASS_AGNOSTIC: False
+
+        IN_CHANNELS: 256
+
+        BBOX_CODER_CFG:
+            type: 'AnchorFreeBBoxCoder'
+            num_dir_bins: 12
+
+        VOTE_MODULE_CFG:
+            in_channels: 256
+            num_points: 256
+            gt_per_seed: 1
+            conv_channels: [128, ]
+            conv_cfg:
+                type: 'Conv1d'
+            norm_cfg:
+                type: 'BatchNorm1d'
+                eps: 0.001
+                momentum: 0.1
+            with_res_feat: False
+            vote_xyz_range: [10.0, 3.0, 3.0]
+
+        VOTE_AGGREGATION_CFG:
+            type: 'PointnetSAModuleMSG'
+            num_point: 256
+            radii: [4.8, 6.4]
+            sample_nums: [16, 32]
+            mlp_channels: [[256, 256, 256, 512], [256, 256, 512, 1024]]
+            use_xyz: True
+            normalize_xyz: False
+            bias: True
+
+        PRED_LAYER_CFG:
+            in_channels: 1536
+            shared_conv_channels: [512, 128]
+            cls_conv_channels: [128, ]
+            reg_conv_channels: [128, ]
+            conv_cfg:
+                type: 'Conv1d'
+            norm_cfg:
+                type: 'BatchNorm1d'
+                eps: 0.001
+                momentum: 0.1
+            bias: True
+        TRAIN_CFG:
+            sample_mod: 'spec'
+            pos_distance_thr: 10.0
+            expand_dims_length: 0.05
+        TEST_CFG:
+            nms_cfg:
+                type: 'nms'
+                iou_thr: 0.1
+            sample_mod: 'spec'
+            score_thr: 0.0
+            per_class_proposal: True
+            max_output_num: 100
+
+    PFE:
+        NAME: VoxelSetAbstraction
+        POINT_SOURCE: raw_points
+        NUM_KEYPOINTS: 4086
+        NUM_OUTPUT_FEATURES: 128
+        SAMPLE_METHOD: FPS
+
+        FEATURES_SOURCE: ['raw_points', 'sa_xyz0', 'sa_xyz1', 'sa_xyz2']
+        SA_LAYER:
+            raw_points:
+                MLPS: [[16, 16], [16, 16]]
+                POOL_RADIUS: [0.4, 0.8]
+                NSAMPLE: [16, 16]
+            sa_xyz0:
+                MLPS: [[64, 64], [64, 64]]
+                POOL_RADIUS: [0.8, 1.6]
+                NSAMPLE: [16, 16]
+            sa_xyz1:
+                MLPS: [[128, 128], [128, 128]]
+                POOL_RADIUS: [1.6, 3.2]
+                NSAMPLE: [16, 32]
+            sa_xyz2:
+                MLPS: [[256, 256], [256, 256]]
+                POOL_RADIUS: [6.4, 9.6]
+                NSAMPLE: [16, 32]
+
+    ROI_HEAD:
+        NAME: PVRCNNHead
+        CLASS_AGNOSTIC: True
+
+        SHARED_FC: [256, 256]
+        CLS_FC: [256, 256]
+        REG_FC: [256, 256]
+        DP_RATIO: 0.3
+
+        NMS_CONFIG:
+            TRAIN:
+                NMS_TYPE: nms_gpu
+                MULTI_CLASSES_NMS: False
+                NMS_PRE_MAXSIZE: 9000
+                NMS_POST_MAXSIZE: 512
+                NMS_THRESH: 0.8
+            TEST:
+                NMS_TYPE: nms_gpu
+                MULTI_CLASSES_NMS: False
+                NMS_PRE_MAXSIZE: 1024
+                NMS_POST_MAXSIZE: 100
+                NMS_THRESH: 0.7
+
+        ROI_GRID_POOL:
+            GRID_SIZE: 6
+            MLPS: [[64, 64], [64, 64]]
+            POOL_RADIUS: [0.8, 1.6]
+            NSAMPLE: [16, 16]
+            POOL_METHOD: max_pool
+
+        TARGET_CONFIG:
+            BOX_CODER: ResidualCoder
+            ROI_PER_IMAGE: 128
+            FG_RATIO: 0.5
+
+            SAMPLE_ROI_BY_EACH_CLASS: True
+            CLS_SCORE_TYPE: roi_iou
+
+            CLS_FG_THRESH: 0.75
+            CLS_BG_THRESH: 0.25
+            CLS_BG_THRESH_LO: 0.1
+            HARD_BG_RATIO: 0.8
+
+            REG_FG_THRESH: 0.55
+
+            REG_TRACKING_INFO: True
+
+        LOSS_CONFIG:
+            CLS_LOSS: BinaryCrossEntropy
+            REG_LOSS: smooth-l1
+            CORNER_LOSS_REGULARIZATION: True
+            LOSS_WEIGHTS: {
+                'rcnn_cls_weight': 1.0,
+                'rcnn_reg_weight': 1.0,
+                'rcnn_corner_weight': 1.0,
+                'code_weights': [1.0, 1.0, 0.5, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
+            }
+
+    POST_PROCESSING:
+        RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+        SCORE_THRESH: 0.25
+        OUTPUT_RAW_SCORE: False
+
+        EVAL_METRIC: kitti
+
+        NMS_CONFIG:
+            MULTI_CLASSES_NMS: False
+            NMS_TYPE: nms_gpu
+            NMS_THRESH: 0.01
+            NMS_PRE_MAXSIZE: 4096
+            NMS_POST_MAXSIZE: 500
+
+
+OPTIMIZATION:
+    BATCH_SIZE_PER_GPU: 1
+    NUM_EPOCHS: 80
+
+    OPTIMIZER: adam_onecycle
+    LR: 0.01
+    WEIGHT_DECAY: 0.01
+    MOMENTUM: 0.9
+
+    MOMS: [0.95, 0.85]
+    PCT_START: 0.4
+    DIV_FACTOR: 10
+    DECAY_STEP_LIST: [35, 45]
+    LR_DECAY: 0.1
+    LR_CLIP: 0.0000001
+
+    LR_WARMUP: False
+    WARMUP_EPOCH: 1
+
+    GRAD_NORM_CLIP: 10

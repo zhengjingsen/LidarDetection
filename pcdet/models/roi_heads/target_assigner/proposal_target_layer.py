@@ -113,13 +113,12 @@ class ProposalTargetLayer(nn.Module):
             batch_roi_ious[index] = max_overlaps[sampled_inds]
             batch_roi_scores[index] = cur_roi_scores[sampled_inds]
 
-            if batch_dict.get('gt_boxes_enlarged', None) is not None:
-                cur_gt = gt_boxes[index][:k + 1]
             if assign_tracking_target:
+                cur_gt = gt_boxes[index][:k + 1]
                 locations = batch_dict['locations'][index][:k + 1]
                 rotations_y = batch_dict['rotations_y'][index][:k + 1]
                 cur_gt = torch.cat([cur_gt, locations[:, 0, :], locations[:, 2, :], rotations_y[:, [0, 2]]], dim=-1)
-            cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
+                cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
             batch_gt_of_rois[index] = cur_gt[gt_assignment[sampled_inds]]
 
         return batch_rois, batch_gt_of_rois, batch_roi_ious, batch_roi_scores, batch_roi_labels

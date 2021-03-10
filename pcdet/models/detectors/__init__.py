@@ -5,12 +5,14 @@ from .pointpillar import PointPillar
 from .pv_rcnn import PVRCNN
 from .second_net import SECONDNet
 from .ssd3d import SSD3D
+from .pp_rcnn import PPRCNN
 
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
     'SECONDNet': SECONDNet,
     'PartA2Net': PartA2Net,
     'PVRCNN': PVRCNN,
+    'PPRCNN': PPRCNN,
     'PointPillar': PointPillar,
     'PointRCNN': PointRCNN,
     'SSD3D': SSD3D,

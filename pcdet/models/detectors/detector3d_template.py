@@ -109,7 +109,7 @@ class Detector3DTemplate(nn.Module):
             model_cfg=self.model_cfg.PFE,
             voxel_size=model_info_dict['voxel_size'],
             point_cloud_range=model_info_dict['point_cloud_range'],
-            num_bev_features=model_info_dict['num_bev_features_height_compress'],
+            num_bev_features=model_info_dict.get('num_bev_features_height_compress', None),
             num_rawpoint_features=model_info_dict['num_rawpoint_features']
         )
         model_info_dict['module_list'].append(pfe_module)

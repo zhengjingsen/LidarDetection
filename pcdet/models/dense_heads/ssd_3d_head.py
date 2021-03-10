@@ -39,6 +39,7 @@ class SSD3DHead(nn.Module):
     def __init__(self,
                  model_cfg,
                  in_channels=256,
+                 predict_boxes_when_training=True,
                  **kwargs):
         super(SSD3DHead, self).__init__()
         self.num_classes = kwargs['num_class']
@@ -75,6 +76,7 @@ class SSD3DHead(nn.Module):
         self.vote_loss = loss_utils.WeightedSmoothL1Loss()
         self.num_candidates = model_cfg.VOTE_MODULE_CFG['num_points']
         self.sample_mod = 'spec'
+        self.predict_boxes_when_training = predict_boxes_when_training
 
     def _get_cls_out_channels(self):
         """Return the channel number of classification outputs."""
@@ -230,7 +232,8 @@ class SSD3DHead(nn.Module):
             self.forward_ret_dict.update({
                 'gt_bboxes_3d': gt_bboxes_3d,
                 'gt_labels_3d': gt_labels_3d})
-        else:
+
+        if not self.training or self.predict_boxes_when_training:
             batch_dict = self.get_bboxes(batch_dict)
 
         return batch_dict
@@ -363,7 +366,7 @@ class SSD3DHead(nn.Module):
             if len(cur_gt_labels_3d) == 0:
                 print('len(gt_labels_3d[index]) == 0')
                 fake_box = cur_gt_bboxes_3d.new_zeros(
-                    1, cur_gt_bboxes_3d.shape[-1])
+                    1, gt_bboxes_3d[index].shape[-1])
                 cur_gt_bboxes_3d = fake_box
                 cur_gt_labels_3d = cur_gt_labels_3d.new_zeros(1)
             new_gt_bboxes_3d.append(cur_gt_bboxes_3d)
@@ -460,7 +463,7 @@ class SSD3DHead(nn.Module):
         vote_targets = center_targets.clone()
         center_targets = center_targets[assignment]
         size_res_targets = size_targets[assignment]
-        mask_targets = (gt_labels_3d[assignment] - 1).long()
+        mask_targets = torch.clamp((gt_labels_3d[assignment] - 1).long(), min=0)
         dir_class_targets = dir_class_targets[assignment]
         dir_res_targets = dir_res_targets[assignment]
         corner3d_targets = gt_corner3d[assignment]

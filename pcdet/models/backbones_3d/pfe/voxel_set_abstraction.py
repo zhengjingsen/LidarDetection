@@ -57,7 +57,8 @@ class VoxelSetAbstraction(nn.Module):
         for src_name in self.model_cfg.FEATURES_SOURCE:
             if src_name in ['bev', 'raw_points']:
                 continue
-            self.downsample_times_map[src_name] = SA_cfg[src_name].DOWNSAMPLE_FACTOR
+            if 'conv' in src_name:
+                self.downsample_times_map[src_name] = SA_cfg[src_name].DOWNSAMPLE_FACTOR
             mlps = SA_cfg[src_name].MLPS
             for k in range(len(mlps)):
                 mlps[k] = [mlps[k][0]] + mlps[k]
@@ -211,23 +212,39 @@ class VoxelSetAbstraction(nn.Module):
             point_features_list.append(pooled_features.view(batch_size, num_keypoints, -1))
 
         for k, src_name in enumerate(self.SA_layer_names):
-            cur_coords = batch_dict['multi_scale_3d_features'][src_name].indices
-            xyz = common_utils.get_voxel_centers(
-                cur_coords[:, 1:4],
-                downsample_times=self.downsample_times_map[src_name],
-                voxel_size=self.voxel_size,
-                point_cloud_range=self.point_cloud_range
-            )
-            xyz_batch_cnt = xyz.new_zeros(batch_size).int()
-            for bs_idx in range(batch_size):
-                xyz_batch_cnt[bs_idx] = (cur_coords[:, 0] == bs_idx).sum()
+            if 'conv' in src_name:
+                cur_coords = batch_dict['multi_scale_3d_features'][src_name].indices
+                xyz = common_utils.get_voxel_centers(
+                    cur_coords[:, 1:4],
+                    downsample_times=self.downsample_times_map[src_name],
+                    voxel_size=self.voxel_size,
+                    point_cloud_range=self.point_cloud_range
+                )
+                xyz_batch_cnt = xyz.new_zeros(batch_size).int()
+                for bs_idx in range(batch_size):
+                    xyz_batch_cnt[bs_idx] = (cur_coords[:, 0] == bs_idx).sum()
+
+                features=batch_dict['multi_scale_3d_features'][src_name].features.contiguous()
+            elif 'sa_xyz' in src_name:
+                layer_idx = int(src_name[-1])
+
+                xyz = batch_dict['sa_xyz'][layer_idx]
+                xyz_batch_cnt = xyz.new_zeros(batch_size).int().fill_(xyz.size(1))
+                channels = xyz.size(-1)
+                xyz = xyz.reshape(-1, channels).contiguous()
+
+                features = batch_dict['sa_features'][layer_idx].transpose(1, 2)
+                channels = features.size(-1)
+                features = features.reshape(-1, channels).contiguous()
+            else:
+                raise NotImplementedError
 
             pooled_points, pooled_features = self.SA_layers[k](
                 xyz=xyz.contiguous(),
                 xyz_batch_cnt=xyz_batch_cnt,
                 new_xyz=new_xyz,
                 new_xyz_batch_cnt=new_xyz_batch_cnt,
-                features=batch_dict['multi_scale_3d_features'][src_name].features.contiguous(),
+                features=features,
             )
             point_features_list.append(pooled_features.view(batch_size, num_keypoints, -1))
 
