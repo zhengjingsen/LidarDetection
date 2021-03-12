@@ -196,7 +196,7 @@ PointCloudVoxel::PointCloudVoxel(int max_points_per_voxel,
       auto bev_coordinate = bev_coordinate_tensor.accessor<float,2>();
       auto bev_local_coordinate = bev_local_coordinate_tensor.accessor<float,2>();
 
-      auto intensity = intensity_tensor.accessor<float,1>();
+      auto intensity = intensity_tensor.accessor<float,2>();
       auto bev_mapping_pv = bev_mapping_pv_tensor.accessor<int,1>();
       auto bev_mapping_vf = bev_mapping_vf_tensor.accessor<int,2>();
 
@@ -226,7 +226,8 @@ PointCloudVoxel::PointCloudVoxel(int max_points_per_voxel,
           bev_coordinate[point_counts][1] = points[i][1];
           bev_coordinate[point_counts][2] = points[i][2];
 
-          intensity[point_counts] = points[i][3];
+          intensity[point_counts][0] = points[i][3];
+          intensity[point_counts][1] = points[i][4];
 
           bev_local_coordinate[point_counts][0] = points[i][0] - min_x_ - voxel_x_step_ * (bev_x_index + 0.5);
           bev_local_coordinate[point_counts][1] = points[i][1] - min_y_ - voxel_y_step_ * (bev_x_index + 0.5);

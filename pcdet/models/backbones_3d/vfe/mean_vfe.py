@@ -102,7 +102,7 @@ def scatterMean(input, input_index, voxel_nums):
     input_mean = input.new_empty(input.shape)
 
     scatter_mean(input, input_index, output, input_mean)
-    return input_mean
+    return output
 
 
 class VoxelFeatureExtractor(nn.Module):
@@ -140,13 +140,13 @@ class MeanVFEDV(VFETemplate):
     def __init__(self, model_cfg, num_point_features, **kwargs):
         super().__init__(model_cfg=model_cfg)
         self.num_point_features = num_point_features
-        self.output_channels = 16
+        self.output_channels = 5
 
-        self.FC = nn.Sequential(
-            nn.Linear(10, self.output_channels, bias=False),
-            nn.BatchNorm1d(self.output_channels, eps=1e-3, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
+        # self.FC = nn.Sequential(
+        #     nn.Linear(11, self.output_channels, bias=False),
+        #     nn.BatchNorm1d(self.output_channels, eps=1e-3, momentum=0.01),
+        #     nn.ReLU(inplace=True)
+        # )
 
     def get_output_feature_dim(self):
         return self.output_channels
@@ -171,14 +171,15 @@ class MeanVFEDV(VFETemplate):
         # throw z position
         bev_mapping_vf = batch_dict['bev_mapping_vf'][:, :3].contiguous()
 
-        point_mean = scatterMean(bev_coordinate, bev_mapping_pv, bev_mapping_vf.shape[0])
-        feature = torch.cat(
-            (bev_coordinate, intensity.unsqueeze(1), (bev_coordinate - point_mean), bev_local_coordinate),
-            dim=1).contiguous()
+        # point_mean = scatterMean(bev_coordinate, bev_mapping_pv, bev_mapping_vf.shape[0])
+        # feature = torch.cat(
+        #     (bev_coordinate, intensity, (bev_coordinate - point_mean), bev_local_coordinate),
+        #     dim=1).contiguous()
+        #
+        # bev_fc_output = self.FC(feature)
+        # bev_maxpool = scatterMax(bev_fc_output, bev_mapping_pv, bev_mapping_vf.shape[0], True)
 
-        bev_fc_output = self.FC(feature)
-        bev_maxpool = scatterMax(bev_fc_output, bev_mapping_pv, bev_mapping_vf.shape[0], True)
-
-        batch_dict['voxel_features'] = bev_maxpool.contiguous()
+        feature = scatterMean(torch.cat([bev_coordinate, intensity], dim=1).contiguous(), bev_mapping_pv, bev_mapping_vf.shape[0])
+        batch_dict['voxel_features'] = feature.contiguous()
         batch_dict['voxel_coords'] = batch_dict['bev_mapping_vf']
         return batch_dict

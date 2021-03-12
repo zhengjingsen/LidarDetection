@@ -104,7 +104,7 @@ class DataProcessor(object):
 
         bev_coordinate = torch.zeros((self.max_points_num, 3), dtype=torch.float32)
         bev_local_coordinate = torch.zeros((self.max_points_num, 3), dtype=torch.float32)
-        intensity = torch.zeros((self.max_points_num), dtype=torch.float32)
+        intensity = torch.zeros((self.max_points_num, 2), dtype=torch.float32)
         bev_mapping_pv = torch.zeros((self.max_points_num), dtype=torch.int32)
         bev_mapping_vf = torch.zeros((self.max_num_of_voxels, 3), dtype=torch.int32)
 

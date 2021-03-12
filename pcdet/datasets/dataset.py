@@ -158,20 +158,20 @@ class DatasetTemplate(torch_data.Dataset):
                 example_merged[k].append(v)
         ret = {}
         for key, elems in example_merged.items():
-            if key in ['voxels', 'num_points', 'voxel_centers', 'seg_labels', 'part_labels', 'bbox_reg_labels']:
+            if key in ['voxels', 'voxel_num_points', 'num_points', 'voxel_centers', 'seg_labels', 'part_labels', 'bbox_reg_labels']:
                 ret[key] = np.concatenate(elems, axis=0)
-            elif key in ['coordinates', 'points']:
+            elif key in ['coordinates', 'points', 'voxel_coords']:
                 coors = []
                 for i, coor in enumerate(elems):
                     coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
                     coors.append(coor_pad)
                 ret[key] = np.concatenate(coors, axis=0)
-            elif key in ['gt_boxes']:
+            elif key in ['gt_boxes', 'locations', 'rotations_y']:
                 max_gt = 0
                 batch_size = elems.__len__()
                 for k in range(batch_size):
                     max_gt = max(max_gt, elems[k].__len__())
-                batch_gt_boxes3d = np.zeros((batch_size, max_gt, elems[0].shape[-1]), dtype=np.float32)
+                batch_gt_boxes3d = np.zeros((batch_size, max_gt, *list(elems[0].shape[1:])), dtype=np.float32)
                 for k in range(batch_size):
                     batch_gt_boxes3d[k, :elems[k].__len__(), :] = elems[k]
                 ret[key] = batch_gt_boxes3d

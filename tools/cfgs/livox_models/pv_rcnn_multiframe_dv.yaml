@@ -32,8 +32,8 @@ DATA_CONFIG:
             - NAME: random_world_rotation
               WORLD_ROT_ANGLE: [-0.051, 0.051]
 
-            - NAME: random_world_translate
-              WORLD_TRANS_RANGE: [0.16, 0.16, 0.2]
+#             - NAME: random_world_translate
+#               WORLD_TRANS_RANGE: [0.16, 0.16, 0.2]
 
             - NAME: random_world_scaling
               WORLD_SCALE_RANGE: [0.95, 1.05]
@@ -266,7 +266,7 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 1
+    BATCH_SIZE_PER_GPU: 2
     NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle

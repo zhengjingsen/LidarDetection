@@ -1,7 +1,12 @@
 #include <torch/extension.h>
 #include <iostream>
-#define CHECK_CUDA(x) AT_CHECK(x.type().is_cuda(), #x " must be CUDA tensor")
 
+#define CHECK_CUDA(x) do { \
+  if (!x.type().is_cuda()) { \
+    fprintf(stderr, "%s must be CUDA tensor at %s:%d\n", #x, __FILE__, __LINE__); \
+    exit(-1); \
+  } \
+} while (0)
 
  
 void scatter_max_cuda(torch::Tensor input, torch::Tensor input_index,
