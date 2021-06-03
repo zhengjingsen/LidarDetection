@@ -168,3 +168,36 @@ If you find this project useful in your research, please consider cite:
 
 ## Contact
 This project is currently maintained by Shaoshuai Shi ([@sshaoshuai](http://github.com/sshaoshuai)) and Chaoxu Guo ([@Gus-Guo](https://github.com/Gus-Guo)).
+
+## How to train and test multi-frame pv-rcnn model with livox data
+
+Before run all the following command, you need to run
+```
+export PYTHONPATH=$PYTHONPATH:$ROOT_PATH_OF_THIS_REPO
+```
+### prepare data: 
+```
+cd tools
+
+# process bag and json labeling file to extract single frame lidar data and corresponding ground truth info
+# PATH_TO_DATA should contain "bag" and "label" folders 
+python ../pcdet/datasets/plusai/mot_dataset/gen_mot_dataset.py  --data_path /PATH_TO_DATA
+
+# stack single frame lidar to generate multi-frame data and grounttruth database
+python -m pcdet.datasets.plusai.plusai_multiframe_dataset create_plusai_infos tools/cfgs/dataset_configs/plusai_multiframe_dataset.yaml
+```
+
+### train model
+```
+python train.py --cfg_file cfgs/livox_models/pv_rcnn_multiframe.yaml  # use single gpu to train
+bash scripts/dist_train.sh NUM_GPUS --cfg_file cfgs/livox_models/pv_rcnn_multiframe.yaml --workers 0 # use multi gpu to train
+```
+
+### inference
+```
+# visualize model inference result with 3d tool
+ python demo_3d.py --cfg_file cfgs/livox_models/pv_rcnn_multiframe.yaml --ckpt PATH_TO_MODEL.pth --data_path ../data/plusai/20210301T134222_j7-feidian_37_141to161.bag
+
+# inference with bags and generate pre-labeling file
+ python inference_bag2json.py --cfg_file cfgs/livox_models/pv_rcnn_multiframe.yaml --ckpt PATH_TO_MODEL.pth --bag_file /media/jingsen/zjs-ssd/demo_mot_dataset/test_data/20210322T175557_j7-00004_2.bag
+```
