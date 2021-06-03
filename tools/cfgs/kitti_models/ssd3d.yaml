@@ -35,16 +35,27 @@ MODEL:
     BACKBONE_3D:
         NAME: PointNet2SAMSG
         IN_CHANNELS: 4
-        NUM_POINTS: [4096, 512, [256, 256]]
-        RADII: [[0.2, 0.4, 0.8], [0.4, 0.8, 1.6], [1.6, 3.2, 4.8]]
-        NUM_SAMPLES: [[32, 32, 64], [32, 32, 64], [32, 32, 32]]
-        SA_CHANNELS: [[[16, 16, 32], [16, 16, 32], [32, 32, 64]],
-                      [[64, 64, 128], [64, 64, 128], [64, 96, 128]],
-                      [[128, 128, 256], [128, 192, 256], [128, 256, 256]]]
-        AGGREGATION_CHANNELS: [64, 128, 256]
-        FPS_MODS: [['D-FPS'], ['FS'], ['F-FPS', 'D-FPS']]
-        FPS_SAMPLE_RANGE_LISTS: [[-1], [-1], [512, -1]]
-        OUT_INDICES: [2, ]
+#        NUM_POINTS: [4096, 512, [256, 256]]
+#        RADII: [[0.2, 0.4, 0.8], [0.4, 0.8, 1.6], [1.6, 3.2, 4.8]]
+#        NUM_SAMPLES: [[32, 32, 64], [32, 32, 64], [32, 32, 32]]
+#        SA_CHANNELS: [[[16, 16, 32], [16, 16, 32], [32, 32, 64]],
+#                      [[64, 64, 128], [64, 64, 128], [64, 96, 128]],
+#                      [[128, 128, 256], [128, 192, 256], [128, 256, 256]]]
+#        AGGREGATION_CHANNELS: [64, 128, 256]
+#        FPS_MODS: [['D-FPS'], ['FS'], ['F-FPS', 'D-FPS']]
+#        FPS_SAMPLE_RANGE_LISTS: [[-1], [-1], [512, -1]]
+#        OUT_INDICES: [2, ]
+
+        NUM_POINTS: [ 4096, 512 ]
+        RADII: [ [ 0.2, 0.4, 0.8 ], [ 0.4, 0.8, 1.6 ]]
+        NUM_SAMPLES: [ [ 32, 32, 64 ], [ 32, 32, 64 ]]
+        SA_CHANNELS: [ [ [ 16, 16, 32 ], [ 16, 16, 32 ], [ 32, 32, 64 ] ],
+                       [ [64, 64, 128], [64, 64, 128], [64, 96, 128] ],
+                       ]
+        AGGREGATION_CHANNELS: [ 64, 128]
+        FPS_MODS: [ [ 'D-FPS' ], ['FS'], ]
+        FPS_SAMPLE_RANGE_LISTS: [ [ -1 ], [-1]]
+        OUT_INDICES: [ 1, ]
 
     POINT_HEAD:
         NAME: SSD3DHead

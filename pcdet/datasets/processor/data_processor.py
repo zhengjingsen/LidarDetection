@@ -38,10 +38,21 @@ class DataProcessor(object):
             return partial(self.shuffle_points, config=config)
 
         if config.SHUFFLE_ENABLED[self.mode]:
-            points = data_dict['points']
-            shuffle_idx = np.random.permutation(points.shape[0])
-            points = points[shuffle_idx]
-            data_dict['points'] = points
+            if 'points' in data_dict:
+                points = data_dict['points']
+                shuffle_idx = np.random.permutation(points.shape[0])
+                points = points[shuffle_idx]
+                data_dict['points'] = points
+            if 'keyframe_points' in data_dict:
+                points = data_dict['keyframe_points']
+                shuffle_idx = np.random.permutation(points.shape[0])
+                points = points[shuffle_idx]
+                data_dict['keyframe_points'] = points
+            if 'other_points' in data_dict:
+                points = data_dict['other_points']
+                shuffle_idx = np.random.permutation(points.shape[0])
+                points = points[shuffle_idx]
+                data_dict['other_points'] = points
 
         return data_dict
 
@@ -77,6 +88,52 @@ class DataProcessor(object):
         data_dict['voxels'] = voxels
         data_dict['voxel_coords'] = coordinates
         data_dict['voxel_num_points'] = num_points
+        return data_dict
+
+    def voxel_filter(self, data_dict=None, config=None, voxel_generator=None):
+        if data_dict is None:
+            try:
+                from spconv.utils import VoxelGeneratorV2 as VoxelGenerator
+            except:
+                from spconv.utils import VoxelGenerator
+
+            self.max_num_of_voxels = config.MAX_NUMBER_OF_VOXELS[self.mode]
+            voxel_generator = VoxelGenerator(
+                voxel_size=config.VOXEL_SIZE,
+                point_cloud_range=self.point_cloud_range,
+                max_num_points=config.MAX_POINTS_PER_VOXEL,
+                max_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode]
+            )
+            # grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(config.VOXEL_SIZE)
+            # self.grid_size = np.round(grid_size).astype(np.int64)
+            # self.voxel_size = config.VOXEL_SIZE
+            return partial(self.voxel_filter, voxel_generator=voxel_generator)
+
+        points = data_dict['points']
+
+        keyframe_points = points[points[:, -1] == 1]
+        voxel_output = voxel_generator.generate(keyframe_points)
+        if isinstance(voxel_output, dict):
+            voxels, coordinates, num_points = \
+                voxel_output['voxels'], voxel_output['coordinates'], voxel_output['num_points_per_voxel']
+        else:
+            voxels, coordinates, num_points = voxel_output
+        data_dict.update({
+            'keyframe_points': voxels[:, 0, :]
+        })
+
+        other_points = points[points[:, -1] != 1]
+        voxel_output = voxel_generator.generate(other_points)
+        if isinstance(voxel_output, dict):
+            voxels, coordinates, num_points = \
+                voxel_output['voxels'], voxel_output['coordinates'], voxel_output['num_points_per_voxel']
+        else:
+            voxels, coordinates, num_points = voxel_output
+        data_dict.update({
+            'other_points': voxels[:, 0, :]
+        })
+
+        data_dict.pop('points')
         return data_dict
 
     def transform_points_to_dynamic_voxels(self, data_dict=None, config=None, voxel_generator=None):
@@ -159,6 +216,24 @@ class DataProcessor(object):
                 choice = np.concatenate((choice, extra_choice), axis=0)
             np.random.shuffle(choice)
         data_dict['points'] = points[choice]
+        return data_dict
+
+    def merge_points(self, data_dict=None, config=None):
+        if data_dict is None:
+            return partial(self.merge_points, config=config)
+
+        fill_num = self.max_num_of_voxels - data_dict['keyframe_points'].shape[0]
+        if fill_num > 0:
+            data_dict['keyframe_points'] = np.pad(data_dict['keyframe_points'], ((0, fill_num), (0, 0)), 'constant', constant_values=0.)
+
+        fill_num = self.max_num_of_voxels - data_dict['other_points'].shape[0]
+        if fill_num > 0:
+            data_dict['other_points'] = np.pad(data_dict['other_points'], ((0, fill_num), (0, 0)), 'constant', constant_values=0.)
+
+        data_dict['points'] = np.vstack([data_dict['keyframe_points'], data_dict['other_points']])
+        data_dict.pop('keyframe_points')
+        data_dict.pop('other_points')
+
         return data_dict
 
     def forward(self, data_dict):

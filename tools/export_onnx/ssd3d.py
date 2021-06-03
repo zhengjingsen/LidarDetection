@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pcdet.config import cfg, cfg_from_yaml_file
 from pcdet.models.model_utils.conv_module import ConvModule
-from tools.export_onnx.pointnet2_module import PointnetSAModuleMSG
+from tools.export_onnx.pointnet2_module import PointnetSAModuleMSG, Points_Sampler
 
 
 class PointNet2SAMSG(nn.Module):
@@ -103,8 +103,9 @@ class PointNet2SAMSG(nn.Module):
             torch.Tensor: Features of input points.
         """
         xyz = points[..., 0:3].contiguous()
-        if points.size(-1) > 3:
-            features = points[..., 3:].transpose(1, 2).contiguous()
+        point_num_features = points.size(-1)
+        if point_num_features > 3:
+            features = points[..., 3:point_num_features].transpose(1, 2).contiguous()
         else:
             features = None
 
@@ -163,9 +164,9 @@ def parse_config():
 
     return args, cfg
 
-
 def main():
     model = PointNet2SAMSG(cfg.MODEL.BACKBONE_3D, 4)
+    # model = Points_Sampler([2048], ['FS'])
 
     with torch.no_grad():
         checkpoint = torch.load(args.ckpt)
@@ -188,15 +189,32 @@ def main():
         #     torch.randn([1, 4, 4096, 32], dtype=torch.float32, device=torch.device('cuda:0')),
         #     torch.randn([1, 4, 4096, 32], dtype=torch.float32, device=torch.device('cuda:0')),
         #     torch.randn([1, 4, 4096, 64], dtype=torch.float32, device=torch.device('cuda:0')))
-        model_input = (
-            torch.randn([1, 4096, 4], dtype=torch.float32, device=torch.device('cuda:0')))
 
+        # model_input = (
+        #     torch.randn([1, 96000, 4], dtype=torch.float32, device=torch.device('cuda:0')))
+        pointcloud = np.fromfile(str('/media/jingsen/data/Dataset/plusai/mot_dataset/20201109T152801_j7-l4e-00011_18_57to77.bag/pointcloud/1604911901.000515.bin'),
+                                 dtype=np.float32).reshape(1, -1, 4)
+
+        # # points_xyz = torch.randn([1, 120000, 3], dtype=torch.float32, device=torch.device('cuda:0'))
+        # points_xyz = torch.from_numpy(pointcloud[..., :3]).cuda()
+        # # features = torch.randn([1, 1, 120000], dtype=torch.float32, device=torch.device('cuda:0'))
+        # features = torch.from_numpy(pointcloud[..., 3]).reshape(1, 1, -1).cuda()
+        # points_xyz_t = points_xyz.transpose(1, 2).contiguous()
+        # features_with_xyz = torch.cat([points_xyz_t, features], dim=1).contiguous()
+        # model_input = (points_xyz, points_xyz_t, features_with_xyz)
+        # model_input_names = ['points_xyz', 'points_xyz_t', 'features_with_xyz']
+        # model_output_names = ['output_sa_xyz']
+
+        model_input = torch.from_numpy(pointcloud[:, :16384, :]).cuda()
         model_input_names = ['point_cloud']
         model_output_names = ['output_sa_xyz', 'output_sa_features']
         output_onnx_file = 'ssd3d.onnx'
         torch.onnx.export(model, model_input, output_onnx_file, verbose=True,
                           input_names=model_input_names, output_names=model_output_names)
         print("[SUCCESS] SSD3D model is converted to ONNX.")
+
+        result = model(model_input)
+        print(result[1])
 
 
 import onnx
@@ -277,4 +295,4 @@ def model_validation():
 if __name__ == '__main__':
     args, cfg = parse_config()
     main()
-    model_validation()
+    # model_validation()

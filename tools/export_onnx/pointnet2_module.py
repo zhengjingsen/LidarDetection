@@ -9,13 +9,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, List
 from torch.autograd import Function, Variable
-
+import time
 from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_batch_cuda as pointnet2
 
 class SampleAndGather(Function):
     @staticmethod
     def symbolic(g, feature_t: torch.Tensor, xyz_t: torch.Tensor, npoint: int):
-        return g.op('SampleAndGather', feature_t, xyz_t)
+        return g.op('SampleAndGather', feature_t, xyz_t, npoint_i=npoint)
 
     @staticmethod
     def forward(ctx, feature_t: torch.Tensor, xyz_t: torch.Tensor, npoint: int) \
@@ -33,15 +33,23 @@ class SampleAndGather(Function):
         assert xyz_t.is_contiguous()
 
         B, N, C = feature_t.size()
-        idx = torch.cuda.IntTensor(B, npoint)
+        idx = torch.cuda.IntTensor(B, npoint).fill_(0)
         temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
 
+        start = time.time()
         pointnet2.feature_furthest_point_sampling_wrapper(B, N, npoint, C, feature_t, temp, idx)
+        print("idx: ", idx[-1, -1])
+        end = time.time()
+        print('sampling elapsed time: ', (end - start)*1000.0)
         ctx.mark_non_differentiable(idx)
 
+        start = time.time()
         _, C, _ = xyz_t.size()
         output = torch.cuda.FloatTensor(B, C, npoint)
         pointnet2.gather_points_wrapper(B, C, N, npoint, xyz_t, idx, output)
+        print("output: ", output[0, :, -1])
+        end = time.time()
+        print('gather elapsed time: ', (end - start)*1000.0)
 
         ctx.for_backwards = (idx, C, N)
         return output
@@ -58,11 +66,13 @@ class SampleAndGather(Function):
 
 sample_and_gather = SampleAndGather.apply
 
+from torch.onnx.symbolic_helper import parse_args
 class QueryAndGroup(Function):
     @staticmethod
+    @parse_args('v', 'v', 'v', 'f', 'i')
     def symbolic(g, xyz: torch.Tensor, new_xyz: torch.Tensor, features_with_xyz: torch.Tensor,
                  radius: float, nsample: int):
-        return g.op('QueryAndGroup', xyz, new_xyz, features_with_xyz)
+        return g.op('QueryAndGroup', xyz, new_xyz, features_with_xyz, radius_f=radius, nsample_i=nsample)
 
     @staticmethod
     def forward(ctx, xyz: torch.Tensor, new_xyz: torch.Tensor, features_with_xyz: torch.Tensor,
@@ -161,11 +171,14 @@ class Points_Sampler(nn.Module):
                 self.fps_sample_range_list, self.fps_mod_list, self.num_point):
             assert fps_sample_range < points_xyz.shape[1]
 
-            if fps_sample_range == -1:
-                sample_points_xyz = points_xyz[:, last_fps_end_index:]
-                sample_points_xyz_t = points_xyz_t[:, :, last_fps_end_index:]
-                sample_features = features_with_xyz[:, :, last_fps_end_index:]
+            if fps_sample_range == -1 and last_fps_end_index == 0:
+                    sample_points_xyz = points_xyz
+                    sample_points_xyz_t = points_xyz_t
+                    sample_features = features_with_xyz
             else:
+                if fps_sample_range == -1:
+                    fps_sample_range = points_xyz.size(1)
+
                 sample_points_xyz = \
                     points_xyz[:, last_fps_end_index:fps_sample_range]
                 sample_points_xyz_t = \
@@ -183,7 +196,11 @@ class Points_Sampler(nn.Module):
                                                 npoint))
 
             last_fps_end_index += fps_sample_range
-        output = torch.cat(output, dim=2)
+
+        if len(output) == 1:
+            output = output[0]
+        else:
+            output = torch.cat(output, dim=2)
 
         return output
 
@@ -240,8 +257,9 @@ class PointnetSAModuleMSG(nn.Module):
         new_xyz_t = new_xyz_t.unsqueeze(dim=3)
         for k in range(self.num_balls):
             group_features = query_and_group(xyz, new_xyz, features_with_xyz, self.radius[k], self.nsamples[k])
+            feature_channel_num = group_features.size(1)
             new_features = torch.cat([group_features[:, 0:3, ...] - new_xyz_t,
-                                      group_features[:, 3:, ...]], dim=1)
+                                      group_features[:, 3:feature_channel_num, ...]], dim=1)
 
             new_features = self.mlps[k](new_features)  # (B, mlp[-1], npoint, nsample)
             if self.pool_method == 'max_pool':

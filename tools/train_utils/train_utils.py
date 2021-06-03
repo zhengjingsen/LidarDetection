@@ -5,6 +5,9 @@ import torch
 import tqdm
 from torch.nn.utils import clip_grad_norm_
 
+# import cv2
+# import numpy as np
+# from pcdet.utils.data_viz import plot_gt_boxes, plot_multiframe_boxes
 
 def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, accumulated_iter, optim_cfg,
                     rank, tbar, total_it_each_epoch, dataloader_iter, tb_log=None, leave_pbar=False):
@@ -14,6 +17,9 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
     if rank == 0:
         pbar = tqdm.tqdm(total=total_it_each_epoch, leave=leave_pbar, desc='train', dynamic_ncols=True)
 
+    # fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    # out = cv2.VideoWriter('train_input.avi', fourcc, 10.0, (400, 1600))
+    # bev_range = [-5, -20, -2, 155, 20, 5]
     for cur_it in range(total_it_each_epoch):
         try:
             batch = next(dataloader_iter)
@@ -21,6 +27,15 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
             dataloader_iter = iter(train_loader)
             batch = next(dataloader_iter)
             print('new iters')
+
+        # boxes = batch['gt_boxes'][0]
+        # boxes = boxes[:, np.newaxis, :].repeat(3, axis=1)
+        # boxes[:, :, 0:3] = batch['locations'][0, ...]
+        # boxes[:, :, -2] = batch['rotations_y'][0]
+        # image = plot_multiframe_boxes(batch['points'][:, 1:], boxes, bev_range)
+        # cv2.imshow('show_result', image)
+        # cv2.waitKey(1)
+        # out.write(image)
 
         lr_scheduler.step(accumulated_iter)
 

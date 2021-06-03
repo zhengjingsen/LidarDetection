@@ -38,23 +38,50 @@ DATA_CONFIG:
             - NAME: random_world_scaling
               WORLD_SCALE_RANGE: [0.95, 1.05]
 
+    DATA_PROCESSOR:
+        - NAME: mask_points_and_boxes_outside_range
+          REMOVE_OUTSIDE_BOXES: True
+
+#        - NAME: sample_points
+#          NUM_POINTS: {
+#              'train': 180000,
+#              'test': 180000
+#          }
+#          SAMPLE_DISTANCE_THRESH: 40.0
+
+        - NAME: voxel_filter
+          VOXEL_SIZE: [0.1, 0.1, 0.1]
+          MAX_POINTS_PER_VOXEL: 8
+          MAX_NUMBER_OF_VOXELS: {
+              'train': 32768,
+              'test': 32768
+          }
+
+        - NAME: shuffle_points
+          SHUFFLE_ENABLED: {
+              'train': True,
+              'test': False
+          }
+
+        - NAME: merge_points
+          MERGE_ENABLED: True
+
 MODEL:
     NAME: PPRCNN
     STACK_FRAME_SIZE: 3
 
     BACKBONE_3D:
         NAME: PointNet2SAMSG
-        IN_CHANNELS: 4
-        NUM_POINTS: [ 4096, 512, [ 256, 256 ] ]
-        RADII: [ [ 0.2, 0.4, 0.8 ], [ 0.4, 0.8, 1.6 ], [ 1.6, 3.2, 4.8 ] ]
-        NUM_SAMPLES: [ [ 32, 32, 64 ], [ 32, 32, 64 ], [ 32, 32, 32 ] ]
-        SA_CHANNELS: [ [ [ 16, 16, 32 ], [ 16, 16, 32 ], [ 32, 32, 64 ] ],
-                       [ [ 64, 64, 128 ], [ 64, 64, 128 ], [ 64, 96, 128 ] ],
-                       [ [ 128, 128, 256 ], [ 128, 192, 256 ], [ 128, 256, 256 ] ] ]
+        NUM_POINTS: [ [4096, 2048], [1024, 1024], [ 512, 256 ] ]
+        RADII: [ [0.5, 1.0, 2.0], [1.0, 2.0, 4.0], [4.0, 8.0, 12.0] ]
+        NUM_SAMPLES: [ [ 32, 64, 64 ], [ 32, 32, 64], [ 32, 32, 32] ]
+        SA_CHANNELS: [[[16, 16, 32], [16, 16, 32], [32, 32, 64]],
+                      [[32, 32, 64], [32, 32, 64], [64, 96, 128]],
+                      [[64, 128, 128], [64, 128, 128], [128, 256, 256]]]
         AGGREGATION_CHANNELS: [ 64, 128, 256 ]
-        FPS_MODS: [ [ 'D-FPS' ], [ 'FS' ], [ 'F-FPS', 'D-FPS' ] ]
-        FPS_SAMPLE_RANGE_LISTS: [ [ -1 ], [ -1 ], [ 512, -1 ] ]
-        OUT_INDICES: [ 0, 1, 2, ]
+        FPS_MODS: [ [ 'D-FPS', 'D-FPS' ], [ 'F-FPS', 'D-FPS' ], [ 'F-FPS', 'FS' ] ]
+        FPS_SAMPLE_RANGE_LISTS: [ [ 32768, -1 ], [ 4096,  -1 ], [ 1024, -1 ] ]
+        OUT_INDICES: [ 0, 1, 2]
 
     POINT_HEAD:
         NAME: SSD3DHead
@@ -68,7 +95,7 @@ MODEL:
 
         VOTE_MODULE_CFG:
             in_channels: 256
-            num_points: 256
+            num_points: 512
             gt_per_seed: 1
             conv_channels: [128, ]
             conv_cfg:
@@ -82,7 +109,7 @@ MODEL:
 
         VOTE_AGGREGATION_CFG:
             type: 'PointnetSAModuleMSG'
-            num_point: 256
+            num_point: 512
             radii: [4.8, 6.4]
             sample_nums: [16, 32]
             mlp_channels: [[256, 256, 256, 512], [256, 256, 512, 1024]]
@@ -122,23 +149,19 @@ MODEL:
         NUM_OUTPUT_FEATURES: 128
         SAMPLE_METHOD: FPS
 
-        FEATURES_SOURCE: ['raw_points', 'sa_xyz0', 'sa_xyz1', 'sa_xyz2']
+        FEATURES_SOURCE: ['sa_xyz0', 'sa_xyz1', 'sa_xyz2']
         SA_LAYER:
-            raw_points:
-                MLPS: [[16, 16], [16, 16]]
-                POOL_RADIUS: [0.4, 0.8]
-                NSAMPLE: [16, 16]
             sa_xyz0:
-                MLPS: [[64, 64], [64, 64]]
-                POOL_RADIUS: [0.8, 1.6]
-                NSAMPLE: [16, 16]
+                MLPS: [64, 64]
+                POOL_RADIUS: [1.0, 2.0]
+                NSAMPLE: [16, 32]
             sa_xyz1:
-                MLPS: [[128, 128], [128, 128]]
-                POOL_RADIUS: [1.6, 3.2]
+                MLPS: [128, 128]
+                POOL_RADIUS: [2.0, 4.0]
                 NSAMPLE: [16, 32]
             sa_xyz2:
-                MLPS: [[256, 256], [256, 256]]
-                POOL_RADIUS: [6.4, 9.6]
+                MLPS: [256, 256]
+                POOL_RADIUS: [8.0, 12.0]
                 NSAMPLE: [16, 32]
 
     ROI_HEAD:
@@ -219,7 +242,7 @@ OPTIMIZATION:
     NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle
-    LR: 0.01
+    LR: 0.005
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 

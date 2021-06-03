@@ -59,20 +59,27 @@ class VoxelSetAbstraction(nn.Module):
                 continue
             if 'conv' in src_name:
                 self.downsample_times_map[src_name] = SA_cfg[src_name].DOWNSAMPLE_FACTOR
-            mlps = SA_cfg[src_name].MLPS
-            for k in range(len(mlps)):
-                mlps[k] = [mlps[k][0]] + mlps[k]
-            cur_layer = pointnet2_stack_modules.StackSAModuleMSG(
-                radii=SA_cfg[src_name].POOL_RADIUS,
-                nsamples=SA_cfg[src_name].NSAMPLE,
-                mlps=mlps,
-                use_xyz=True,
-                pool_method='max_pool',
-            )
+                mlps = SA_cfg[src_name].MLPS
+                for k in range(len(mlps)):
+                    mlps[k] = [mlps[k][0]] + mlps[k]
+
+                cur_layer = pointnet2_stack_modules.StackSAModuleMSG(
+                    radii=SA_cfg[src_name].POOL_RADIUS,
+                    nsamples=SA_cfg[src_name].NSAMPLE,
+                    mlps=mlps,
+                    use_xyz=True,
+                    pool_method='max_pool',
+                )
+                c_in += sum([x[-1] for x in mlps])
+            elif 'sa_xyz' in src_name:
+                mlps = SA_cfg[src_name].MLPS
+                cur_layer = pointnet2_stack_modules.StackPointnetFPModule(mlp=mlps)
+                c_in += mlps[-1]
+            else:
+                raise NotImplementedError
+
             self.SA_layers.append(cur_layer)
             self.SA_layer_names.append(src_name)
-
-            c_in += sum([x[-1] for x in mlps])
 
         if 'bev' in self.model_cfg.FEATURES_SOURCE:
             c_bev = num_bev_features
@@ -180,7 +187,10 @@ class VoxelSetAbstraction(nn.Module):
             point_coords: (N, 4)
 
         """
-        keypoints = self.get_sampled_points(batch_dict)
+        if 'sa_xyz' in batch_dict:
+            keypoints = batch_dict['sa_xyz'][0]
+        else:
+            keypoints = self.get_sampled_points(batch_dict)
 
         point_features_list = []
         if 'bev' in self.model_cfg.FEATURES_SOURCE:
@@ -225,6 +235,14 @@ class VoxelSetAbstraction(nn.Module):
                     xyz_batch_cnt[bs_idx] = (cur_coords[:, 0] == bs_idx).sum()
 
                 features=batch_dict['multi_scale_3d_features'][src_name].features.contiguous()
+
+                pooled_points, pooled_features = self.SA_layers[k](
+                    xyz=xyz.contiguous(),
+                    xyz_batch_cnt=xyz_batch_cnt,
+                    new_xyz=new_xyz,
+                    new_xyz_batch_cnt=new_xyz_batch_cnt,
+                    features=features,
+                )
             elif 'sa_xyz' in src_name:
                 layer_idx = int(src_name[-1])
 
@@ -236,16 +254,12 @@ class VoxelSetAbstraction(nn.Module):
                 features = batch_dict['sa_features'][layer_idx].transpose(1, 2)
                 channels = features.size(-1)
                 features = features.reshape(-1, channels).contiguous()
+
+                pooled_features = self.SA_layers[k](
+                    new_xyz, new_xyz_batch_cnt, xyz, xyz_batch_cnt, known_feats=features)
             else:
                 raise NotImplementedError
 
-            pooled_points, pooled_features = self.SA_layers[k](
-                xyz=xyz.contiguous(),
-                xyz_batch_cnt=xyz_batch_cnt,
-                new_xyz=new_xyz,
-                new_xyz_batch_cnt=new_xyz_batch_cnt,
-                features=features,
-            )
             point_features_list.append(pooled_features.view(batch_size, num_keypoints, -1))
 
         point_features = torch.cat(point_features_list, dim=2)
